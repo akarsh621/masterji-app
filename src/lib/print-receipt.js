@@ -143,10 +143,10 @@ function buildReceiptHTML(bill) {
     Exchange / Return sirf 7 din mein
   </div>
   <div class="divider"></div>
-  <div class="center bold" style="margin-top:4px;font-size:17px">
+  <div class="center bold" style="margin-top:10px;font-size:19px">
     Thank You For Shopping!
   </div>
-  <div class="center bold" style="font-size:13px;margin-top:3px">
+  <div class="center bold" style="font-size:19px;margin-top:8px">
     Naye kapdo me jach rahe ho,<br>phir zarur aana :)
   </div>
 

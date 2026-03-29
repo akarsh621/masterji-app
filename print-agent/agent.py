@@ -167,9 +167,10 @@ def build_receipt(job):
     buf += b'\n'
     buf += DOUBLE_HEIGHT_ON
     buf += encode('Thank You For Shopping!\n')
-    buf += NORMAL + BOLD_ON + DSTRIKE_ON
+    buf += b'\n'
     buf += encode('Naye kapdo me jach rahe ho,\n')
     buf += encode('phir zarur aana :)\n')
+    buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += b'\n'
     buf += qr_code_bytes('https://g.page/r/Cdj1aJR-po6TEBI/review')
     buf += b'\n'
