@@ -90,7 +90,7 @@ function buildReceiptHTML(bill) {
 <div class="receipt">
   <!-- Header -->
   <div class="double-divider"></div>
-  <div class="center bold" style="font-size:22px;letter-spacing:1px">${SHOP_NAME}</div>
+  <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>
   <div class="center" style="font-size:12px;margin-top:3px;white-space:pre-line">${SHOP_ADDRESS}</div>
   <div class="center" style="font-size:12px">${SHOP_PHONE}</div>
   <div class="double-divider"></div>

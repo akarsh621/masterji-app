@@ -27,9 +27,15 @@ def update_file(filename):
     print('Downloading {}...'.format(filename))
     try:
         resp = requests.get(url, timeout=30)
+        if resp.status_code == 404:
+            print('[ERROR] File not found. Is the repo public?')
+            return False
         resp.raise_for_status()
+    except requests.exceptions.ConnectionError:
+        print('[ERROR] Cannot reach GitHub. Check internet connection.')
+        return False
     except Exception as e:
-        print('[ERROR] Failed to download {}: {}'.format(filename, e))
+        print('[ERROR] Failed: {}'.format(e))
         return False
 
     if os.path.exists(local_path):
@@ -58,7 +64,7 @@ def main():
     if ok == len(FILES_TO_UPDATE):
         print('[OK] All files updated. Restart the agent to use the new version.')
     else:
-        print('[WARN] Some files failed to update. Check errors above.')
+        print('[WARN] Some files failed. Check errors above.')
 
 
 if __name__ == '__main__':

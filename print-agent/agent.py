@@ -22,8 +22,6 @@ ESC = b'\x1b'
 GS = b'\x1d'
 
 INIT = ESC + b'@'
-# Heating params: max dots=9, heat time=240 (max darkness), interval=2
-HEAT_DARK = ESC + b'\x37\x09\xf0\x02'
 BOLD_ON = ESC + b'E\x01'
 BOLD_OFF = ESC + b'E\x00'
 DSTRIKE_ON = ESC + b'G\x01'
@@ -88,7 +86,6 @@ def build_receipt(job):
     """Build ESC/POS byte sequence for a receipt."""
     buf = bytearray()
     buf += INIT
-    buf += HEAT_DARK
     buf += BOLD_ON + DSTRIKE_ON
 
     # ── Shop Header (biggest possible: double-height + double-width) ──
@@ -207,6 +204,40 @@ def format_date(date_str):
 
 # ── Printer ───────────────────────────────────────────────────────
 
+JOB_STATUS_ERROR   = 0x00000002
+JOB_STATUS_OFFLINE = 0x00000020
+JOB_STATUS_PAPEROUT = 0x00000040
+JOB_STATUS_BLOCKED = 0x00000200
+JOB_STATUS_USER_INTERVENTION = 0x00000400
+JOB_STATUS_STUCK = (JOB_STATUS_ERROR | JOB_STATUS_OFFLINE |
+                    JOB_STATUS_PAPEROUT | JOB_STATUS_BLOCKED |
+                    JOB_STATUS_USER_INTERVENTION)
+
+
+def flush_spooler(printer_name):
+    """Cancel stuck/error jobs in the Windows spooler for this printer only."""
+    try:
+        hprinter = win32print.OpenPrinter(printer_name)
+        try:
+            jobs = win32print.EnumJobs(hprinter, 0, 100, 1)
+            cleared = 0
+            for job in jobs:
+                status = job.get('Status', 0)
+                if status & JOB_STATUS_STUCK:
+                    try:
+                        win32print.SetJob(hprinter, job['JobId'],
+                                          0, None, win32print.JOB_CONTROL_DELETE)
+                        cleared += 1
+                    except Exception:
+                        pass
+            if cleared:
+                print('[SPOOLER] Cleared {} stuck job(s)'.format(cleared))
+        finally:
+            win32print.ClosePrinter(hprinter)
+    except Exception as e:
+        print('[SPOOLER] Warning: {}'.format(e))
+
+
 def send_to_printer(printer_name, data):
     """Send raw bytes to a Windows printer."""
     hprinter = win32print.OpenPrinter(printer_name)
@@ -318,7 +349,8 @@ def main():
                     # Mark as printing
                     api.update_job_status(queue_id, 'printing')
 
-                    # Build and send receipt
+                    # Clear any stuck spooler jobs, then print
+                    flush_spooler(printer_name)
                     receipt_data = build_receipt(job)
                     send_to_printer(printer_name, receipt_data)
 
