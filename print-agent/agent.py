@@ -132,7 +132,7 @@ def build_receipt(job):
     saved = int(round(mrp_total - total)) if mrp_total else 0
 
     if saved > 0:
-        buf += encode('{:<24s}{:>18s}\n'.format('You Save', rupees(saved)))
+        buf += encode('{:<24s}{:>18s}\n'.format('You Save (Discount)', rupees(saved)))
 
     # ── TOTAL (double-height + double-width for max emphasis) ──
     buf += DOUBLE_LINE

@@ -121,7 +121,7 @@ function buildReceiptHTML(bill) {
   <!-- You Save -->
   ${n.totalDiscount > 0 ? `
   <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
-    <span>You Save</span>
+    <span>You Save (Discount)</span>
     <span>${rupees(n.totalDiscount)}</span>
   </div>
   <div class="divider"></div>` : ''}
