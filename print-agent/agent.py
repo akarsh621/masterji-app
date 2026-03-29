@@ -74,7 +74,7 @@ def _indian_format(n):
     return prefix + result
 
 def rupees(n):
-    return 'Rs.' + _indian_format(n)
+    return 'Rs ' + _indian_format(n)
 
 def rupees_bare(n):
     return _indian_format(n)
@@ -88,34 +88,38 @@ def build_receipt(job):
     buf += INIT
     buf += DSTRIKE_ON
 
-    # ── Header (Level 3: bold + double-height + double-strike) ──
+    # ── Shop Header ──
+    buf += DOUBLE_LINE
     buf += CENTER + BOLD_ON + DOUBLE_HEIGHT_ON
     buf += encode('MASTER JI FASHION HOUSE\n')
-    buf += NORMAL + DSTRIKE_ON
+    buf += NORMAL + DSTRIKE_ON + BOLD_ON
     buf += encode('C Block, Main Market Road\n')
     buf += encode('Shastri Nagar, Ghaziabad\n')
     buf += encode('Ph: 9540664066 / 0120-4245977\n')
+    buf += BOLD_OFF
     buf += DOUBLE_LINE
 
-    # ── Bill info (Level 2: bold + double-strike) ──
-    buf += LEFT + BOLD_ON
-    buf += encode('{}\n'.format(job.get('bill_number', '')))
+    # ── Bill info (one line: bill number left, date right) ──
+    buf += LEFT
+    bill_num = job.get('bill_number', '')
+    date_str = format_date(job.get('created_at', ''))
+    gap = LINE_WIDTH - len(bill_num) - len(date_str)
+    if gap < 1:
+        gap = 1
+    buf += BOLD_ON
+    buf += encode('{}{}{}\n'.format(bill_num, ' ' * gap, date_str))
     buf += BOLD_OFF
-    buf += encode('{}\n'.format(format_date(job.get('created_at', ''))))
     salesman = job.get('salesman_name', '')
     if salesman:
-        buf += BOLD_ON
         buf += encode('Salesman: {}\n'.format(salesman))
-        buf += BOLD_OFF
     buf += LINE
 
-    # ── Items header (Level 2: bold + double-strike) ──
+    # ── Items ──
     buf += BOLD_ON
     buf += encode('{:<24s}{:>6s}{:>12s}\n'.format('Item', 'Qty', 'Rs'))
     buf += BOLD_OFF
     buf += LINE
 
-    # ── Items (Level 1: double-strike only) ──
     items = job.get('items', [])
     for item in items:
         name = item.get('category_name', 'Item')[:24]
@@ -126,38 +130,37 @@ def build_receipt(job):
         ))
     buf += LINE
 
-    # ── You Save (Level 2: bold + double-strike) ──
+    # ── You Save ──
     mrp_total = job.get('mrp_total', 0)
     total = job.get('total', 0)
     saved = int(round(mrp_total - total)) if mrp_total else 0
 
     if saved > 0:
         buf += BOLD_ON
-        save_label = 'You Save'
-        save_value = rupees(saved)
-        buf += encode('{:<24s}{:>18s}\n'.format(save_label, save_value))
+        buf += encode('{:<24s}{:>18s}\n'.format('You Save', rupees(saved)))
         buf += BOLD_OFF
-        buf += LINE
 
-    # ── TOTAL (Level 4: bold + double-height + double-width + double-strike) ──
+    # ── TOTAL ──
     buf += DOUBLE_LINE
     buf += BOLD_ON + DOUBLE_BOTH_ON
     buf += encode('{:<10s}{:>11s}\n'.format('TOTAL', rupees(total)))
     buf += NORMAL + DSTRIKE_ON + BOLD_OFF
-    buf += LINE
+    buf += DOUBLE_LINE
 
-    # ── Payment (Level 1: double-strike) ──
+    # ── Payment ──
     payments = job.get('payments', [])
     if len(payments) > 1:
+        buf += BOLD_ON
         for p in payments:
             mode = p.get('mode', '').upper()
             amt = int(round(p.get('amount', 0)))
             buf += encode('{:<24s}{:>18s}\n'.format(mode, rupees(amt)))
+        buf += BOLD_OFF
     else:
         mode = (job.get('payment_mode', '') or 'cash').upper()
-        buf += CENTER
+        buf += CENTER + BOLD_ON
         buf += encode('Payment: {}\n'.format(mode))
-        buf += LEFT
+        buf += BOLD_OFF + LEFT
 
     notes = job.get('notes', '')
     if notes:
@@ -167,23 +170,23 @@ def build_receipt(job):
 
     # ── Footer ──
     buf += CENTER
-    buf += BOLD_ON
     buf += encode('Exchange / Return sirf 7 din mein\n')
-    buf += BOLD_OFF
+    buf += LINE
     buf += b'\n'
     buf += BOLD_ON + DOUBLE_HEIGHT_ON
-    buf += encode('Thank You For Visiting!\n')
-    buf += NORMAL + DSTRIKE_ON
+    buf += encode('Thank You For Shopping!\n')
+    buf += NORMAL + DSTRIKE_ON + BOLD_ON
     buf += encode('Naye kapdo me jach rahe ho,\n')
-    buf += encode('phir jarur aana :)\n')
-    buf += b'\n'
-    buf += encode('Google pe review zarur dena!\n')
+    buf += encode('phir zarur aana :)\n')
+    buf += BOLD_OFF
     buf += b'\n'
     buf += qr_code_bytes('https://g.page/r/Cdj1aJR-po6TEBI/review')
     buf += b'\n'
+    buf += encode('Accha laga to Google pe\n')
+    buf += encode('ek review de dena\n')
 
-    buf += LEFT
     buf += DOUBLE_LINE
+    buf += LEFT
     buf += DSTRIKE_OFF
     buf += FEED_3
     buf += CUT

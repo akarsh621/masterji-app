@@ -143,19 +143,20 @@ function buildReceiptHTML(bill) {
   <div class="center" style="font-size:13px;margin-top:6px">
     Exchange / Return sirf 7 din mein
   </div>
-  <div class="center bold" style="margin-top:8px;font-size:17px">
-    Thank You For Visiting!
+  <div class="divider"></div>
+  <div class="center bold" style="margin-top:4px;font-size:17px">
+    Thank You For Shopping!
   </div>
   <div class="center bold" style="font-size:13px;margin-top:3px">
-    Naye kapdo me jach rahe ho,<br>phir jarur aana :)
+    Naye kapdo me jach rahe ho,<br>phir zarur aana :)
   </div>
 
   <!-- QR Code -->
   <div class="center" style="margin-top:10px">
     <img src="${QR_IMG_URL}" width="110" height="110" style="image-rendering:pixelated" />
   </div>
-  <div class="center" style="font-size:13px;margin-top:3px">
-    Google pe review zarur dena!
+  <div class="center" style="font-size:12px;margin-top:3px">
+    Accha laga to Google pe ek review de dena
   </div>
   <div class="double-divider"></div>
 </div>
