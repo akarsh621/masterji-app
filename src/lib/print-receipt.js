@@ -118,21 +118,20 @@ function buildReceiptHTML(bill) {
   </table>
   <div class="divider"></div>
 
+  <!-- Discount Given -->
+  ${n.totalDiscount > 0 ? `
+  <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
+    <span>Discount Given</span>
+    <span>- ${rupees(n.totalDiscount)}</span>
+  </div>` : ''}
+
   <!-- Total -->
   <div class="double-divider"></div>
   <div style="display:flex;justify-content:space-between" class="total-row">
     <span>TOTAL</span>
     <span>${rupees(n.total)}</span>
   </div>
-  <div class="double-divider"></div>
-
-  <!-- Discount Given -->
-  ${n.totalDiscount > 0 ? `
-  <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
-    <span>Discount Given</span>
-    <span>- ${rupees(n.totalDiscount)}</span>
-  </div>
-  <div class="divider"></div>` : ''}
+  <div class="divider"></div>
 
   <!-- Payment -->
   ${paymentHTML}
