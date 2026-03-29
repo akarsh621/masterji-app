@@ -72,7 +72,7 @@ INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0);
 CREATE TABLE IF NOT EXISTS print_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bill_id INTEGER NOT NULL REFERENCES bills(id),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'printing', 'printed', 'failed', 'expired', 'cleared')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'printing', 'printed', 'failed')),
     requested_by INTEGER NOT NULL REFERENCES users(id),
     printed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))

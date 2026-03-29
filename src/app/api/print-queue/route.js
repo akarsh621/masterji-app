@@ -43,7 +43,7 @@ export async function GET(request) {
 
     if (status === 'pending') {
       db.prepare(`
-        UPDATE print_queue SET status = 'expired'
+        UPDATE print_queue SET status = 'failed'
         WHERE status = 'pending'
         AND created_at < datetime('now', '+5 hours', '+30 minutes', '-10 minutes')
       `).run();
@@ -126,7 +126,7 @@ export async function DELETE(request) {
 
     const db = getDb();
     const result = db.prepare(
-      "UPDATE print_queue SET status = 'cleared' WHERE status = 'pending'"
+      "UPDATE print_queue SET status = 'failed' WHERE status = 'pending'"
     ).run();
 
     return NextResponse.json({ cleared: result.changes });
