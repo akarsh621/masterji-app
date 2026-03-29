@@ -126,20 +126,21 @@ def build_receipt(job):
         ))
     buf += LINE
 
-    # ── You Save ──
-    mrp_total = job.get('mrp_total', 0)
-    total = job.get('total', 0)
-    saved = int(round(mrp_total - total)) if mrp_total else 0
-
-    if saved > 0:
-        buf += encode('{:<24s}{:>18s}\n'.format('You Save (Discount)', rupees(saved)))
-
     # ── TOTAL (double-height + double-width for max emphasis) ──
+    total = job.get('total', 0)
     buf += DOUBLE_LINE
     buf += DOUBLE_BOTH_ON
     buf += encode('{:<10s}{:>11s}\n'.format('TOTAL', rupees(total)))
     buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += DOUBLE_LINE
+
+    # ── Discount Given ──
+    mrp_total = job.get('mrp_total', 0)
+    saved = int(round(mrp_total - total)) if mrp_total else 0
+
+    if saved > 0:
+        buf += encode('{:<24s}{:>18s}\n'.format('Discount Given', '- ' + rupees(saved)))
+        buf += LINE
 
     # ── Payment ──
     payments = job.get('payments', [])
