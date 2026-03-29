@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#2563eb"/>
+  <!-- Shirorekha (Devanagari headline bar) -->
+  <rect x="80" y="120" width="352" height="12" rx="6" fill="#fff"/>
+  <!-- M -->
+  <rect x="100" y="132" width="28" height="230" rx="4" fill="#fff"/>
+  <rect x="218" y="132" width="28" height="230" rx="4" fill="#fff"/>
+  <polygon points="114,132 164,260 164,232 114,120" fill="#fff"/>
+  <polygon points="232,132 182,260 182,232 232,120" fill="#fff"/>
+  <rect x="148" y="230" width="50" height="28" rx="4" fill="#fff" opacity="0"/>
+  <polygon points="114,132 172,280 158,280 100,132" fill="#fff"/>
+  <polygon points="232,132 174,280 188,280 246,132" fill="#fff"/>
+  <!-- J -->
+  <rect x="300" y="120" width="120" height="12" rx="6" fill="#fff"/>
+  <rect x="344" y="132" width="28" height="190" rx="4" fill="#fff"/>
+  <path d="M290,340 Q290,382 340,382 Q372,382 372,340 L372,322 L344,322 L344,336 Q344,356 332,356 Q318,356 318,336 L318,322 L290,322 Z" fill="#fff"/>
+  <!-- Decorative dot -->
+  <circle cx="256" cy="420" r="16" fill="#fbbf24"/>
+</svg>

@@ -22,6 +22,8 @@ ESC = b'\x1b'
 GS = b'\x1d'
 
 INIT = ESC + b'@'
+# Heating params: max dots=9, heat time=240 (max darkness), interval=2
+HEAT_DARK = ESC + b'\x37\x09\xf0\x02'
 BOLD_ON = ESC + b'E\x01'
 BOLD_OFF = ESC + b'E\x00'
 DSTRIKE_ON = ESC + b'G\x01'
@@ -86,17 +88,18 @@ def build_receipt(job):
     """Build ESC/POS byte sequence for a receipt."""
     buf = bytearray()
     buf += INIT
-    buf += DSTRIKE_ON
+    buf += HEAT_DARK
+    buf += BOLD_ON + DSTRIKE_ON
 
-    # ── Shop Header ──
+    # ── Shop Header (biggest possible: double-height + double-width) ──
     buf += DOUBLE_LINE
-    buf += CENTER + BOLD_ON + DOUBLE_HEIGHT_ON
-    buf += encode('MASTER JI FASHION HOUSE\n')
-    buf += NORMAL + DSTRIKE_ON + BOLD_ON
+    buf += CENTER + DOUBLE_BOTH_ON
+    buf += encode('MASTER JI\n')
+    buf += encode('FASHION HOUSE\n')
+    buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += encode('C Block, Main Market Road\n')
     buf += encode('Shastri Nagar, Ghaziabad\n')
     buf += encode('Ph: 9540664066 / 0120-4245977\n')
-    buf += BOLD_OFF
     buf += DOUBLE_LINE
 
     # ── Bill info (one line: bill number left, date right) ──
@@ -106,18 +109,14 @@ def build_receipt(job):
     gap = LINE_WIDTH - len(bill_num) - len(date_str)
     if gap < 1:
         gap = 1
-    buf += BOLD_ON
     buf += encode('{}{}{}\n'.format(bill_num, ' ' * gap, date_str))
-    buf += BOLD_OFF
     salesman = job.get('salesman_name', '')
     if salesman:
         buf += encode('Salesman: {}\n'.format(salesman))
     buf += LINE
 
     # ── Items ──
-    buf += BOLD_ON
     buf += encode('{:<24s}{:>6s}{:>12s}\n'.format('Item', 'Qty', 'Rs'))
-    buf += BOLD_OFF
     buf += LINE
 
     items = job.get('items', [])
@@ -136,31 +135,27 @@ def build_receipt(job):
     saved = int(round(mrp_total - total)) if mrp_total else 0
 
     if saved > 0:
-        buf += BOLD_ON
         buf += encode('{:<24s}{:>18s}\n'.format('You Save', rupees(saved)))
-        buf += BOLD_OFF
 
-    # ── TOTAL ──
+    # ── TOTAL (double-height + double-width for max emphasis) ──
     buf += DOUBLE_LINE
-    buf += BOLD_ON + DOUBLE_BOTH_ON
+    buf += DOUBLE_BOTH_ON
     buf += encode('{:<10s}{:>11s}\n'.format('TOTAL', rupees(total)))
-    buf += NORMAL + DSTRIKE_ON + BOLD_OFF
+    buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += DOUBLE_LINE
 
     # ── Payment ──
     payments = job.get('payments', [])
     if len(payments) > 1:
-        buf += BOLD_ON
         for p in payments:
             mode = p.get('mode', '').upper()
             amt = int(round(p.get('amount', 0)))
             buf += encode('{:<24s}{:>18s}\n'.format(mode, rupees(amt)))
-        buf += BOLD_OFF
     else:
         mode = (job.get('payment_mode', '') or 'cash').upper()
-        buf += CENTER + BOLD_ON
+        buf += CENTER
         buf += encode('Payment: {}\n'.format(mode))
-        buf += BOLD_OFF + LEFT
+        buf += LEFT
 
     notes = job.get('notes', '')
     if notes:
@@ -173,12 +168,11 @@ def build_receipt(job):
     buf += encode('Exchange / Return sirf 7 din mein\n')
     buf += LINE
     buf += b'\n'
-    buf += BOLD_ON + DOUBLE_HEIGHT_ON
+    buf += DOUBLE_HEIGHT_ON
     buf += encode('Thank You For Shopping!\n')
-    buf += NORMAL + DSTRIKE_ON + BOLD_ON
+    buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += encode('Naye kapdo me jach rahe ho,\n')
     buf += encode('phir zarur aana :)\n')
-    buf += BOLD_OFF
     buf += b'\n'
     buf += qr_code_bytes('https://g.page/r/Cdj1aJR-po6TEBI/review')
     buf += b'\n'
@@ -187,7 +181,7 @@ def build_receipt(job):
 
     buf += DOUBLE_LINE
     buf += LEFT
-    buf += DSTRIKE_OFF
+    buf += BOLD_OFF + DSTRIKE_OFF
     buf += FEED_3
     buf += CUT
 
