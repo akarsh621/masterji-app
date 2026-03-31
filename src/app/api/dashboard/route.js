@@ -237,6 +237,22 @@ export async function GET(request) {
       ORDER BY date ASC
     `).all(...scopedParams);
 
+    let weeklyTrend = [];
+    if (view === 'month' || (from && to)) {
+      const weekRows = db.prepare(`
+        SELECT
+          date(b.created_at, 'weekday 0', '-6 days') as week_start,
+          date(b.created_at, 'weekday 0') as week_end,
+          COUNT(*) as bills,
+          SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END) as revenue
+        FROM bills b
+        WHERE ${scopedWhere}
+        GROUP BY week_start
+        ORDER BY week_start ASC
+      `).all(...scopedParams);
+      weeklyTrend = weekRows;
+    }
+
     let salesmanBreakdown = [];
     if (result.user.role === 'admin') {
       salesmanBreakdown = db.prepare(`
@@ -268,6 +284,7 @@ export async function GET(request) {
       previous_summary,
       categoryBreakdown,
       dailyTrend,
+      weeklyTrend,
       salesmanBreakdown,
     });
 

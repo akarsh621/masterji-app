@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireAdmin } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function csvEscape(value) {
@@ -41,83 +43,112 @@ export async function GET(request) {
     }
     if (to) {
       where.push('b.created_at <= ?');
-      params.push(to + ' 23:59:59');
+      params.push(`${to} 23:59:59`);
     }
 
     const whereClause = where.join(' AND ');
 
-    const rows = db.prepare(`
+    const bills = db.prepare(`
       SELECT
+        b.id,
         b.bill_number,
         b.type,
-        b.original_bill_id,
-        b.created_at as date,
+        b.created_at,
         u.name as salesman,
-        c.name as category,
-        c.group_name as group_name,
-        bi.quantity,
-        bi.amount as item_amount,
+        b.mrp_total,
         b.subtotal,
         b.discount_percent,
         b.discount_amount,
         b.total,
         b.payment_mode,
         b.notes
-      FROM bill_items bi
-      JOIN bills b ON bi.bill_id = b.id
-      JOIN categories c ON bi.category_id = c.id
+      FROM bills b
       JOIN users u ON b.salesman_id = u.id
       WHERE ${whereClause}
-      ORDER BY b.created_at DESC, b.id, bi.id
+      ORDER BY b.created_at DESC, b.id
     `).all(...params);
 
-    const billIds = [...new Set(rows.map(r => r.bill_number))];
-    const billPayments = {};
+    const billIds = bills.map(b => b.id);
+
+    const itemsByBill = {};
+    const paymentsByBill = {};
+
     if (billIds.length > 0) {
-      const allPayments = db.prepare(`
-        SELECT b.bill_number, bp.mode, bp.amount
+      const placeholders = billIds.map(() => '?').join(',');
+
+      const items = db.prepare(`
+        SELECT bi.bill_id, c.name as category, bi.quantity
+        FROM bill_items bi
+        JOIN categories c ON bi.category_id = c.id
+        WHERE bi.bill_id IN (${placeholders})
+        ORDER BY bi.id
+      `).all(...billIds);
+
+      for (const item of items) {
+        if (!itemsByBill[item.bill_id]) itemsByBill[item.bill_id] = [];
+        itemsByBill[item.bill_id].push(item);
+      }
+
+      const payments = db.prepare(`
+        SELECT bp.bill_id, bp.mode, bp.amount
         FROM bill_payments bp
-        JOIN bills b ON bp.bill_id = b.id
-        WHERE ${whereClause}
+        WHERE bp.bill_id IN (${placeholders})
         ORDER BY bp.id
-      `).all(...params);
-      for (const p of allPayments) {
-        if (!billPayments[p.bill_number]) billPayments[p.bill_number] = [];
-        billPayments[p.bill_number].push(`${p.mode}:${p.amount}`);
+      `).all(...billIds);
+
+      for (const p of payments) {
+        if (!paymentsByBill[p.bill_id]) paymentsByBill[p.bill_id] = [];
+        paymentsByBill[p.bill_id].push(p);
       }
     }
 
     const headers = [
-      'Bill Number', 'Type', 'Date', 'Salesman', 'Category', 'Group',
-      'Quantity', 'Item Amount', 'Bill Subtotal', 'Discount %',
-      'Discount Amount', 'Bill Total', 'Payment Mode', 'Payment Split', 'Notes'
+      'Bill No', 'Type', 'Date', 'Time', 'Salesman',
+      'Qty', 'MRP Total', 'Subtotal', 'Discount %', 'Discount Amt',
+      'Total', 'Payment Mode', 'Payment Split', 'Items Detail', 'Notes'
     ];
 
     let csv = headers.join(',') + '\n';
 
-    for (const row of rows) {
-      const split = billPayments[row.bill_number]?.join('; ') || row.payment_mode;
+    for (const bill of bills) {
+      const items = itemsByBill[bill.id] || [];
+      const payments = paymentsByBill[bill.id] || [];
+
+      const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+
+      const itemDetail = items.map(i =>
+        `${i.category} x${i.quantity}`
+      ).join(', ');
+
+      const paymentSplit = payments.map(p =>
+        `${p.mode}:${Math.round(p.amount)}`
+      ).join(', ');
+
+      const dateStr = bill.created_at ? bill.created_at.split(' ')[0] : '';
+      const timeStr = bill.created_at ? (bill.created_at.split(' ')[1] || '').slice(0, 5) : '';
+
       const line = [
-        row.bill_number,
-        row.type || 'sale',
-        row.date,
-        row.salesman,
-        row.category,
-        row.group_name,
-        row.quantity,
-        row.item_amount,
-        row.subtotal,
-        row.discount_percent,
-        row.discount_amount,
-        row.total,
-        row.payment_mode,
-        split,
-        row.notes || '',
+        bill.bill_number,
+        bill.type || 'sale',
+        dateStr,
+        timeStr,
+        bill.salesman,
+        totalQty,
+        Math.round(bill.mrp_total || 0),
+        Math.round(bill.subtotal),
+        bill.discount_percent || 0,
+        Math.round(bill.discount_amount || 0),
+        Math.round(bill.total),
+        bill.payment_mode,
+        paymentSplit,
+        itemDetail,
+        bill.notes || '',
       ].map(csvEscape).join(',');
+
       csv += line + '\n';
     }
 
-    const filename = `masterji-sales${from ? `-from-${from}` : ''}${to ? `-to-${to}` : ''}.csv`;
+    const filename = `masterji-bills${from ? `-from-${from}` : ''}${to ? `-to-${to}` : ''}.csv`;
 
     return new NextResponse(csv, {
       headers: {
