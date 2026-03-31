@@ -1,7 +1,8 @@
 """
 Master Ji Fashion House -- Print Agent for Windows 7
 Polls the Railway-hosted app for pending print jobs and sends
-receipts to the TVS RP 3200 Star thermal printer via ESC/POS.
+receipts to the TVS RP 3200 Star thermal printer.
+Supports two modes: 'raw' (ESC/POS) and 'html' (via Windows printer driver).
 """
 
 import time
@@ -12,9 +13,16 @@ import requests
 
 try:
     import win32print
+    import win32api
 except ImportError:
     print("[ERROR] pywin32 not installed. Run: pip install pywin32==228")
     sys.exit(1)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RECEIPT_HTML_PATH = os.path.join(SCRIPT_DIR, '_receipt.html')
+GOOGLE_REVIEW_URL = 'https://g.page/r/Cdj1aJR-po6TEBI/review'
+QR_IMG_URL = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + GOOGLE_REVIEW_URL.replace(':', '%3A').replace('/', '%2F')
+
 
 # ── ESC/POS Commands ──────────────────────────────────────────────
 
@@ -44,12 +52,13 @@ def qr_code_bytes(data):
     store_pL = store_len & 0xFF
     store_pH = (store_len >> 8) & 0xFF
     buf = bytearray()
-    buf += GS + b'(k\x04\x00\x311\x32\x00'       # QR model 2
-    buf += GS + b'(k\x03\x00\x31C\x06'             # QR size 6 (medium-large)
-    buf += GS + b'(k\x03\x00\x31E1'                # Error correction level L
-    buf += GS + b'(k' + bytes([store_pL, store_pH]) + b'\x31P0' + encoded  # Store data
-    buf += GS + b'(k\x03\x00\x31Q0'                # Print QR
+    buf += GS + b'(k\x04\x00\x311\x32\x00'
+    buf += GS + b'(k\x03\x00\x31C\x06'
+    buf += GS + b'(k\x03\x00\x31E1'
+    buf += GS + b'(k' + bytes([store_pL, store_pH]) + b'\x31P0' + encoded
+    buf += GS + b'(k\x03\x00\x31Q0'
     return bytes(buf)
+
 LINE_WIDTH = 42
 LINE = b'-' * LINE_WIDTH + b'\n'
 DOUBLE_LINE = b'=' * LINE_WIDTH + b'\n'
@@ -79,8 +88,30 @@ def rupees(n):
 def rupees_bare(n):
     return _indian_format(n)
 
+def rupees_html(n):
+    return '&#8377;' + _indian_format(n)
 
-# ── Receipt Builder ───────────────────────────────────────────────
+
+# ── Date Formatting ──────────────────────────────────────────────
+
+def format_date(date_str):
+    if not date_str:
+        return ''
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(date_str[:19], '%Y-%m-%d %H:%M:%S')
+        months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        hour = dt.hour % 12 or 12
+        ampm = 'PM' if dt.hour >= 12 else 'AM'
+        return '{} {} {}  {}:{:02d} {}'.format(
+            dt.day, months[dt.month], dt.year, hour, dt.minute, ampm
+        )
+    except Exception:
+        return date_str
+
+
+# ── RAW ESC/POS Receipt Builder ──────────────────────────────────
 
 def build_receipt(job):
     """Build ESC/POS byte sequence for a receipt."""
@@ -88,7 +119,6 @@ def build_receipt(job):
     buf += INIT
     buf += BOLD_ON + DSTRIKE_ON
 
-    # ── Shop Header (biggest possible: double-height + double-width) ──
     buf += DOUBLE_LINE
     buf += CENTER + DOUBLE_BOTH_ON
     buf += encode('MASTER JI\n')
@@ -99,7 +129,6 @@ def build_receipt(job):
     buf += encode('Ph: 9540664066 / 0120-4245977\n')
     buf += DOUBLE_LINE
 
-    # ── Bill info (one line: bill number left, date right) ──
     buf += LEFT
     bill_num = job.get('bill_number', '')
     date_str = format_date(job.get('created_at', ''))
@@ -112,7 +141,6 @@ def build_receipt(job):
         buf += encode('Salesman: {}\n'.format(salesman))
     buf += LINE
 
-    # ── Items ──
     buf += encode('{:<24s}{:>6s}{:>12s}\n'.format('Item', 'Qty', 'Rs'))
     buf += LINE
 
@@ -126,7 +154,6 @@ def build_receipt(job):
         ))
     buf += LINE
 
-    # ── Discount Given ──
     mrp_total = job.get('mrp_total', 0)
     total = job.get('total', 0)
     saved = int(round(mrp_total - total)) if mrp_total else 0
@@ -134,14 +161,12 @@ def build_receipt(job):
     if saved > 0:
         buf += encode('{:<24s}{:>18s}\n'.format('Discount Given', '- ' + rupees(saved)))
 
-    # ── TOTAL (double-height + double-width for max emphasis) ──
     buf += DOUBLE_LINE
     buf += DOUBLE_BOTH_ON
     buf += encode('{:<10s}{:>11s}\n'.format('TOTAL', rupees(total)))
     buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += DOUBLE_LINE
 
-    # ── Payment ──
     payments = job.get('payments', [])
     if len(payments) > 1:
         for p in payments:
@@ -160,7 +185,6 @@ def build_receipt(job):
 
     buf += LINE
 
-    # ── Footer ──
     buf += CENTER
     buf += encode('Exchange / Return sirf 7 din mein\n')
     buf += LINE
@@ -172,7 +196,7 @@ def build_receipt(job):
     buf += encode('phir zarur aana :)\n')
     buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += b'\n'
-    buf += qr_code_bytes('https://g.page/r/Cdj1aJR-po6TEBI/review')
+    buf += qr_code_bytes(GOOGLE_REVIEW_URL)
     buf += b'\n'
     buf += encode('Accha laga to Google pe\n')
     buf += encode('ek review de dena\n')
@@ -186,21 +210,172 @@ def build_receipt(job):
     return bytes(buf)
 
 
-def format_date(date_str):
-    if not date_str:
-        return ''
-    try:
-        from datetime import datetime
-        dt = datetime.strptime(date_str[:19], '%Y-%m-%d %H:%M:%S')
-        months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        hour = dt.hour % 12 or 12
-        ampm = 'PM' if dt.hour >= 12 else 'AM'
-        return '{} {} {}  {}:{:02d} {}'.format(
-            dt.day, months[dt.month], dt.year, hour, dt.minute, ampm
-        )
-    except Exception:
-        return date_str
+# ── HTML Receipt Builder ─────────────────────────────────────────
+
+def build_receipt_html(job):
+    """Build HTML receipt string (same layout as browser version)."""
+    bill_num = job.get('bill_number', '')
+    date_str = format_date(job.get('created_at', ''))
+    salesman = job.get('salesman_name', '')
+    total = job.get('total', 0)
+    mrp_total = job.get('mrp_total', 0)
+    saved = int(round(mrp_total - total)) if mrp_total else 0
+    notes = job.get('notes', '')
+    items = job.get('items', [])
+    payments = job.get('payments', [])
+    payment_mode = (job.get('payment_mode', '') or 'cash').upper()
+
+    items_rows = ''
+    for item in items:
+        name = item.get('category_name', 'Item')
+        qty = item.get('quantity', 1)
+        amt = int(round(item.get('amount', 0)))
+        items_rows += (
+            '<tr>'
+            '<td style="text-align:left">{}</td>'
+            '<td style="text-align:center">{}</td>'
+            '<td style="text-align:right">{}</td>'
+            '</tr>\n'
+        ).format(name, qty, rupees_html(amt))
+
+    if len(payments) > 1:
+        payment_html = '<div style="margin-top:6px">'
+        for p in payments:
+            mode = p.get('mode', '').upper()
+            amt = int(round(p.get('amount', 0)))
+            payment_html += (
+                '<div style="display:flex;justify-content:space-between">'
+                '<span>{}</span><span>{}</span>'
+                '</div>'
+            ).format(mode, rupees_html(amt))
+        payment_html += '</div>'
+    else:
+        payment_html = '<div style="margin-top:6px;text-align:center">Payment: {}</div>'.format(payment_mode)
+
+    notes_html = ''
+    if notes:
+        notes_html = '<div style="margin-top:4px;font-size:13px;color:#000">Note: {}</div>'.format(notes)
+
+    discount_html = ''
+    if saved > 0:
+        discount_html = (
+            '<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">'
+            '<span>Discount Given</span>'
+            '<span>- {}</span>'
+            '</div>'
+        ).format(rupees_html(saved))
+
+    salesman_html = ''
+    if salesman:
+        salesman_html = '<div style="font-size:13px">Salesman: {}</div>'.format(salesman)
+
+    html = (
+        '<!DOCTYPE html>\n'
+        '<html>\n'
+        '<head>\n'
+        '<meta charset="utf-8">\n'
+        '<title>Receipt {bill_num}</title>\n'
+        '<style>\n'
+        '  @page {{ size: 80mm auto; margin: 2mm; }}\n'
+        '  * {{ margin: 0; padding: 0; box-sizing: border-box; }}\n'
+        '  body {{\n'
+        '    font-family: Arial, Helvetica, sans-serif;\n'
+        '    font-size: 15px;\n'
+        '    font-weight: bold;\n'
+        '    line-height: 1.4;\n'
+        '    width: 76mm;\n'
+        '    max-width: 76mm;\n'
+        '    color: #000;\n'
+        '    -webkit-print-color-adjust: exact;\n'
+        '    print-color-adjust: exact;\n'
+        '  }}\n'
+        '  .receipt {{ padding: 2mm; }}\n'
+        '  .center {{ text-align: center; }}\n'
+        '  .bold {{ font-weight: 900; }}\n'
+        '  .divider {{ border-top: 1px dashed #000; margin: 8px 0; }}\n'
+        '  .double-divider {{ border-top: 3px solid #000; margin: 8px 0; }}\n'
+        '  table {{ width: 100%; border-collapse: collapse; }}\n'
+        '  th {{ padding: 4px 0; font-size: 13px; font-weight: 900; border-bottom: 2px solid #000; }}\n'
+        '  td {{ padding: 4px 0; font-size: 14px; font-weight: bold; }}\n'
+        '  .total-row {{ font-size: 20px; font-weight: 900; }}\n'
+        '</style>\n'
+        '</head>\n'
+        '<body>\n'
+        '<div class="receipt">\n'
+        '  <div class="double-divider"></div>\n'
+        '  <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>\n'
+        '  <div class="center" style="font-size:12px;margin-top:3px">C Block, Main Market Road<br>Shastri Nagar, Ghaziabad</div>\n'
+        '  <div class="center" style="font-size:12px">Ph: 9540664066 / 0120-4245977</div>\n'
+        '  <div class="double-divider"></div>\n'
+        '\n'
+        '  <div style="display:flex;justify-content:space-between">\n'
+        '    <span class="bold">{bill_num}</span>\n'
+        '    <span style="font-size:13px">{date_str}</span>\n'
+        '  </div>\n'
+        '  {salesman_html}\n'
+        '  <div class="divider"></div>\n'
+        '\n'
+        '  <table>\n'
+        '    <thead>\n'
+        '      <tr>\n'
+        '        <th style="text-align:left">Item</th>\n'
+        '        <th style="text-align:center">Qty</th>\n'
+        '        <th style="text-align:right">Rs</th>\n'
+        '      </tr>\n'
+        '    </thead>\n'
+        '    <tbody>\n'
+        '      {items_rows}\n'
+        '    </tbody>\n'
+        '  </table>\n'
+        '  <div class="divider"></div>\n'
+        '\n'
+        '  {discount_html}\n'
+        '\n'
+        '  <div class="double-divider"></div>\n'
+        '  <div style="display:flex;justify-content:space-between" class="total-row">\n'
+        '    <span>TOTAL</span>\n'
+        '    <span>{total_html}</span>\n'
+        '  </div>\n'
+        '  <div class="divider"></div>\n'
+        '\n'
+        '  {payment_html}\n'
+        '  {notes_html}\n'
+        '  <div class="divider"></div>\n'
+        '\n'
+        '  <div class="center" style="font-size:13px;margin-top:6px">\n'
+        '    Exchange / Return sirf 7 din mein\n'
+        '  </div>\n'
+        '  <div class="divider"></div>\n'
+        '  <div class="center bold" style="margin-top:10px;font-size:19px">\n'
+        '    Thank You For Shopping!\n'
+        '  </div>\n'
+        '  <div class="center bold" style="font-size:19px;margin-top:8px">\n'
+        '    Naye kapdo me jach rahe ho,<br>phir zarur aana :)\n'
+        '  </div>\n'
+        '\n'
+        '  <div class="center" style="margin-top:10px">\n'
+        '    <img src="{qr_url}" width="110" height="110" style="image-rendering:pixelated" />\n'
+        '  </div>\n'
+        '  <div class="center" style="font-size:12px;margin-top:3px">\n'
+        '    Accha laga to Google pe ek review de dena\n'
+        '  </div>\n'
+        '  <div class="double-divider"></div>\n'
+        '</div>\n'
+        '</body>\n'
+        '</html>'
+    ).format(
+        bill_num=bill_num,
+        date_str=date_str,
+        salesman_html=salesman_html,
+        items_rows=items_rows,
+        discount_html=discount_html,
+        total_html=rupees_html(total),
+        payment_html=payment_html,
+        notes_html=notes_html,
+        qr_url=QR_IMG_URL,
+    )
+
+    return html
 
 
 # ── Printer ───────────────────────────────────────────────────────
@@ -240,7 +415,7 @@ def flush_spooler(printer_name):
 
 
 def send_to_printer(printer_name, data):
-    """Send raw bytes to a Windows printer."""
+    """Send raw ESC/POS bytes to a Windows printer."""
     hprinter = win32print.OpenPrinter(printer_name)
     try:
         win32print.StartDocPrinter(hprinter, 1, ("MasterJi Receipt", None, "RAW"))
@@ -250,6 +425,29 @@ def send_to_printer(printer_name, data):
         win32print.EndDocPrinter(hprinter)
     finally:
         win32print.ClosePrinter(hprinter)
+
+
+def send_html_to_printer(printer_name, html):
+    """Print HTML receipt through Windows printer driver for better quality."""
+    with open(RECEIPT_HTML_PATH, 'w', encoding='utf-8') as f:
+        f.write(html)
+
+    old_default = None
+    try:
+        old_default = win32print.GetDefaultPrinter()
+    except Exception:
+        pass
+
+    try:
+        win32print.SetDefaultPrinter(printer_name)
+        win32api.ShellExecute(0, 'print', RECEIPT_HTML_PATH, None, '.', 0)
+        time.sleep(3)
+    finally:
+        if old_default:
+            try:
+                win32print.SetDefaultPrinter(old_default)
+            except Exception:
+                pass
 
 
 # ── API Client ────────────────────────────────────────────────────
@@ -277,7 +475,7 @@ class PrintAgentAPI:
 
 def load_config():
     config = configparser.ConfigParser()
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.ini')
+    config_path = os.path.join(SCRIPT_DIR, 'config.ini')
     if not os.path.exists(config_path):
         print('[ERROR] config.ini not found at {}'.format(config_path))
         print('        Copy config.example.ini to config.ini and fill in your values.')
@@ -292,9 +490,9 @@ def main():
     base_url = config.get('server', 'url')
     token = config.get('server', 'agent_token')
     printer_name = config.get('printer', 'name')
+    print_mode = config.get('printer', 'mode', fallback='raw')
     poll_interval = config.getint('agent', 'poll_seconds', fallback=5)
 
-    # --clear flag: wipe all pending jobs and exit
     if '--clear' in sys.argv:
         try:
             resp = requests.delete(
@@ -313,6 +511,7 @@ def main():
     print('  Master Ji Print Agent')
     print('  Server: {}'.format(base_url))
     print('  Printer: {}'.format(printer_name))
+    print('  Mode: {}'.format(print_mode.upper()))
     print('  Poll interval: {}s'.format(poll_interval))
     print('=' * 50)
 
@@ -338,7 +537,7 @@ def main():
             consecutive_errors = 0
 
             if not jobs:
-                pass  # No pending jobs, silent
+                pass
             else:
                 print('[INFO] {} pending job(s) found'.format(len(jobs)))
 
@@ -347,15 +546,17 @@ def main():
                 bill_number = job.get('bill_number', '?')
 
                 try:
-                    # Mark as printing
                     api.update_job_status(queue_id, 'printing')
 
-                    # Clear any stuck spooler jobs, then print
                     flush_spooler(printer_name)
-                    receipt_data = build_receipt(job)
-                    send_to_printer(printer_name, receipt_data)
 
-                    # Mark as printed
+                    if print_mode == 'html':
+                        html = build_receipt_html(job)
+                        send_html_to_printer(printer_name, html)
+                    else:
+                        receipt_data = build_receipt(job)
+                        send_to_printer(printer_name, receipt_data)
+
                     api.update_job_status(queue_id, 'printed')
                     print('[DONE] {} printed successfully'.format(bill_number))
 

@@ -211,29 +211,36 @@ export default function Dashboard() {
         </div>
       )}
 
-      {dailyTrend.length > 1 && (
+      {dailyTrend.length > 1 && (() => {
+        const maxRev = Math.max(...dailyTrend.map(x => x.revenue));
+        const BAR_AREA_HEIGHT = 96;
+        return (
         <div className="card mb-4">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Daily Trend</h3>
-          <div className="flex items-end gap-1 h-32">
-            {dailyTrend.map((d, i) => {
-              const max = Math.max(...dailyTrend.map(x => x.revenue));
-              const height = max > 0 ? (d.revenue / max) * 100 : 0;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs text-gray-500">₹{Math.round(d.revenue / 1000)}k</span>
-                  <div
-                    className="w-full bg-blue-500 rounded-t"
-                    style={{ height: `${Math.max(height, 2)}%` }}
-                  />
-                  <span className="text-xs text-gray-400">
-                    {new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto -mx-2 px-2">
+            <div className="flex items-end gap-1" style={{ minWidth: dailyTrend.length > 10 ? `${dailyTrend.length * 48}px` : undefined }}>
+              {dailyTrend.map((d, i) => {
+                const barH = maxRev > 0 ? Math.max((d.revenue / maxRev) * BAR_AREA_HEIGHT, 4) : 4;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center" style={{ minWidth: 40 }}>
+                    <span className="text-[10px] text-gray-500 mb-1">₹{Math.round(d.revenue / 1000)}k</span>
+                    <div style={{ height: BAR_AREA_HEIGHT }} className="w-full flex items-end">
+                      <div
+                        className="w-full bg-blue-500 rounded-t"
+                        style={{ height: barH }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-gray-400 mt-1">
+                      {new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <CategoryBreakdown data={categoryBreakdown} />
 

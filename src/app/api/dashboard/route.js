@@ -8,6 +8,27 @@ function isDateOnly(value) {
   return DATE_ONLY_REGEX.test(value);
 }
 
+function getISTToday() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  return ist.toISOString().split('T')[0];
+}
+
+function getISTMonday() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  const day = ist.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  ist.setUTCDate(ist.getUTCDate() - diff);
+  return ist.toISOString().split('T')[0];
+}
+
+function getISTMonthStart() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
 function buildDateConditions(view, from, to) {
   const conditions = [];
   const params = [];
@@ -25,14 +46,31 @@ function buildDateConditions(view, from, to) {
   } else if (view === 'today') {
     conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes')");
   } else if (view === 'week') {
-    conditions.push("b.created_at >= datetime('now', '+5 hours', '+30 minutes', '-7 days')");
+    const monday = getISTMonday();
+    const today = getISTToday();
+    conditions.push('b.created_at >= ?');
+    params.push(`${monday} 00:00:00`);
+    conditions.push('b.created_at <= ?');
+    params.push(`${today} 23:59:59`);
   } else if (view === 'month') {
-    conditions.push("b.created_at >= datetime('now', '+5 hours', '+30 minutes', '-30 days')");
+    const monthStart = getISTMonthStart();
+    const today = getISTToday();
+    conditions.push('b.created_at >= ?');
+    params.push(`${monthStart} 00:00:00`);
+    conditions.push('b.created_at <= ?');
+    params.push(`${today} 23:59:59`);
   } else {
     conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes')");
   }
 
   return { conditions, params };
+}
+
+function fmtDate(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function buildPreviousPeriodConditions(view, from, to) {
@@ -46,12 +84,6 @@ function buildPreviousPeriodConditions(view, from, to) {
     const durationMs = toDate.getTime() - fromDate.getTime();
     const prevTo = new Date(fromDate.getTime() - 1);
     const prevFrom = new Date(prevTo.getTime() - durationMs);
-    const fmtDate = (d) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
     conditions.push('b.created_at >= ?');
     params.push(`${fmtDate(prevFrom)} 00:00:00`);
     conditions.push('b.created_at <= ?');
@@ -59,11 +91,25 @@ function buildPreviousPeriodConditions(view, from, to) {
   } else if (view === 'today') {
     conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes', '-1 day')");
   } else if (view === 'week') {
-    conditions.push("b.created_at >= datetime('now', '+5 hours', '+30 minutes', '-14 days')");
-    conditions.push("b.created_at < datetime('now', '+5 hours', '+30 minutes', '-7 days')");
+    const monday = getISTMonday();
+    const prevSunday = new Date(monday + 'T00:00:00+05:30');
+    prevSunday.setUTCDate(prevSunday.getUTCDate() - 1);
+    const prevMonday = new Date(prevSunday.getTime());
+    prevMonday.setUTCDate(prevMonday.getUTCDate() - 6);
+    conditions.push('b.created_at >= ?');
+    params.push(`${fmtDate(prevMonday)} 00:00:00`);
+    conditions.push('b.created_at <= ?');
+    params.push(`${fmtDate(prevSunday)} 23:59:59`);
   } else if (view === 'month') {
-    conditions.push("b.created_at >= datetime('now', '+5 hours', '+30 minutes', '-60 days')");
-    conditions.push("b.created_at < datetime('now', '+5 hours', '+30 minutes', '-30 days')");
+    const monthStart = getISTMonthStart();
+    const prevLastDay = new Date(monthStart + 'T00:00:00+05:30');
+    prevLastDay.setUTCDate(prevLastDay.getUTCDate() - 1);
+    const prevFirstDay = new Date(prevLastDay.getTime());
+    prevFirstDay.setUTCDate(1);
+    conditions.push('b.created_at >= ?');
+    params.push(`${fmtDate(prevFirstDay)} 00:00:00`);
+    conditions.push('b.created_at <= ?');
+    params.push(`${fmtDate(prevLastDay)} 23:59:59`);
   } else {
     conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes', '-1 day')");
   }
