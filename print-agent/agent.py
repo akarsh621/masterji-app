@@ -1,8 +1,8 @@
 """
 Master Ji Fashion House -- Print Agent for Windows 7
 Polls the Railway-hosted app for pending print jobs and sends
-receipts to the TVS RP 3200 Star thermal printer.
-Supports two modes: 'raw' (ESC/POS) and 'html' (via Windows printer driver).
+receipts to the TVS RP 3200 Star thermal printer via ESC/POS.
+Printing strategy: direct USB port write first, Windows spooler fallback.
 """
 
 import time
@@ -15,6 +15,7 @@ import requests
 try:
     import win32print
     import win32api
+    import win32file
 except ImportError:
     print("[ERROR] pywin32 not installed. Run: pip install pywin32==228")
     sys.exit(1)
@@ -517,8 +518,43 @@ def wait_for_job_completion(printer_name, job_id, timeout_sec=45):
     return False
 
 
-def send_to_printer(printer_name, data):
-    """Send raw ESC/POS bytes to a Windows printer. Returns spool job id."""
+def get_printer_port(printer_name):
+    """Get the port name (e.g. USB001) for a given printer."""
+    hprinter = win32print.OpenPrinter(printer_name)
+    try:
+        info = win32print.GetPrinter(hprinter, 2)
+        return info.get('pPortName', '')
+    finally:
+        win32print.ClosePrinter(hprinter)
+
+
+def send_to_printer_direct(port_name, data):
+    """Write raw bytes directly to USB port, bypassing Windows spooler entirely."""
+    port_path = port_name
+    if not port_path.startswith('\\\\'):
+        port_path = r'\\.\{}'.format(port_name)
+    try:
+        handle = win32api.CreateFile(
+            port_path,
+            0x40000000,  # GENERIC_WRITE
+            0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+            None,
+            3,  # OPEN_EXISTING
+            0,
+            None
+        )
+        try:
+            win32file.WriteFile(handle, data)
+        finally:
+            win32api.CloseHandle(handle)
+        return True
+    except Exception as e:
+        print('[DIRECT] Port write failed: {}'.format(e))
+        return False
+
+
+def send_to_printer_spooler(printer_name, data):
+    """Send raw ESC/POS bytes via Windows spooler. Returns spool job id."""
     hprinter = win32print.OpenPrinter(printer_name)
     try:
         job_id = win32print.StartDocPrinter(hprinter, 1, ("MasterJi Receipt", None, "RAW"))
@@ -529,6 +565,18 @@ def send_to_printer(printer_name, data):
         return job_id
     finally:
         win32print.ClosePrinter(hprinter)
+
+
+def send_to_printer(printer_name, data, port_name=None):
+    """Send raw bytes. Tries direct USB first, falls back to spooler."""
+    if port_name:
+        print('[PRINT] Sending direct to port {}...'.format(port_name))
+        if send_to_printer_direct(port_name, data):
+            return None
+        print('[PRINT] Direct failed, falling back to spooler...')
+
+    job_id = send_to_printer_spooler(printer_name, data)
+    return job_id
 
 
 def send_html_to_printer(printer_name, html):
@@ -604,6 +652,7 @@ def main():
     token = config.get('server', 'agent_token')
     printer_name = config.get('printer', 'name')
     print_mode = config.get('printer', 'mode', fallback='raw')
+    printer_port = config.get('printer', 'port', fallback='auto')
     poll_interval = config.getint('agent', 'poll_seconds', fallback=5)
 
     if '--clear' in sys.argv:
@@ -624,7 +673,7 @@ def main():
     print('  Master Ji Print Agent')
     print('  Server: {}'.format(base_url))
     print('  Printer: {}'.format(printer_name))
-    print('  Mode: {}'.format(print_mode.upper()))
+    print('  Mode: RAW (direct USB -> spooler fallback)')
     print('  Poll interval: {}s'.format(poll_interval))
     print('=' * 50)
 
@@ -638,7 +687,12 @@ def main():
             print('          - {}'.format(p))
         sys.exit(1)
 
-    print('[OK] Printer "{}" found'.format(printer_name))
+    if printer_port == 'auto':
+        printer_port = get_printer_port(printer_name)
+    if printer_port:
+        print('[OK] Printer "{}" on port {}'.format(printer_name, printer_port))
+    else:
+        print('[OK] Printer "{}" found (no direct port)'.format(printer_name))
     print('[OK] Agent started. Polling for print jobs...\n')
 
     api = PrintAgentAPI(base_url, token)
@@ -661,29 +715,15 @@ def main():
                 try:
                     api.update_job_status(queue_id, 'printing')
 
-                    recover_stuck_spooler(printer_name)
-                    if not wait_for_queue_idle(printer_name, timeout_sec=45):
-                        raise RuntimeError('Spooler queue busy/stuck for too long')
+                    receipt_data = build_receipt(job)
+                    job_id = send_to_printer(printer_name, receipt_data, port_name=printer_port)
 
-                    if print_mode == 'html':
-                        try:
-                            html = build_receipt_html(job)
-                            send_html_to_printer(printer_name, html)
-                            if not wait_for_queue_idle(printer_name, timeout_sec=45):
-                                raise RuntimeError('HTML print did not clear from spooler')
-                        except Exception:
-                            print('[WARN] HTML mode failed, falling back to RAW')
-                            receipt_data = build_receipt(job)
-                            job_id = send_to_printer(printer_name, receipt_data)
-                            if not wait_for_job_completion(printer_name, job_id, timeout_sec=45):
-                                recover_stuck_spooler(printer_name)
-                                raise RuntimeError('RAW print job stuck in spooler')
-                    else:
-                        receipt_data = build_receipt(job)
-                        job_id = send_to_printer(printer_name, receipt_data)
+                    if job_id is not None:
                         if not wait_for_job_completion(printer_name, job_id, timeout_sec=45):
                             recover_stuck_spooler(printer_name)
-                            raise RuntimeError('RAW print job stuck in spooler')
+                            raise RuntimeError('Print job stuck in spooler')
+                    else:
+                        time.sleep(1)
 
                     api.update_job_status(queue_id, 'printed')
                     print('[DONE] {} printed successfully'.format(bill_number))
