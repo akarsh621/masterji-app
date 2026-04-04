@@ -121,8 +121,8 @@ function buildReceiptHTML(bill) {
   <!-- Discount Given -->
   ${n.totalDiscount > 0 ? `
   <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
-    <span>Discount Given</span>
-    <span>- ${rupees(n.totalDiscount)}</span>
+    <span>Discount on MRP</span>
+    <span>${rupees(n.totalDiscount)}</span>
   </div>` : ''}
 
   <!-- Total -->
@@ -143,10 +143,10 @@ function buildReceiptHTML(bill) {
     Exchange / Return sirf 7 din mein
   </div>
   <div class="divider"></div>
-  <div class="center bold" style="margin-top:10px;font-size:19px">
+  <div class="center bold" style="margin-top:10px;font-size:20px">
     Thank You For Shopping!
   </div>
-  <div class="center bold" style="font-size:19px;margin-top:8px">
+  <div class="center bold" style="font-size:18px;margin-top:8px">
     Naye kapdo me jach rahe ho,<br>phir zarur aana :)
   </div>
 
@@ -155,7 +155,7 @@ function buildReceiptHTML(bill) {
     <img src="${QR_IMG_URL}" width="110" height="110" style="image-rendering:pixelated" />
   </div>
   <div class="center" style="font-size:12px;margin-top:3px">
-    Accha laga to Google pe ek review de dena
+    Accha laga to upar QR scan karein &#8593;<br>Ek review zarur dein
   </div>
   <div class="double-divider"></div>
 </div>

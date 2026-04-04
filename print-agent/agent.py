@@ -159,7 +159,7 @@ def build_receipt(job):
     saved = int(round(mrp_total - total)) if mrp_total else 0
 
     if saved > 0:
-        buf += encode('{:<24s}{:>18s}\n'.format('Discount Given', '- ' + rupees(saved)))
+        buf += encode('{:<24s}{:>18s}\n'.format('Discount on MRP', rupees(saved)))
 
     buf += DOUBLE_LINE
     buf += DOUBLE_BOTH_ON
@@ -198,8 +198,8 @@ def build_receipt(job):
     buf += b'\n'
     buf += qr_code_bytes(GOOGLE_REVIEW_URL)
     buf += b'\n'
-    buf += encode('Accha laga to Google pe\n')
-    buf += encode('ek review de dena\n')
+    buf += encode('Accha laga to upar QR scan karein\n')
+    buf += encode('Ek review zarur dein\n')
 
     buf += DOUBLE_LINE
     buf += LEFT
@@ -260,8 +260,8 @@ def build_receipt_html(job):
     if saved > 0:
         discount_html = (
             '<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">'
-            '<span>Discount Given</span>'
-            '<span>- {}</span>'
+            '<span>Discount on MRP</span>'
+            '<span>{}</span>'
             '</div>'
         ).format(rupees_html(saved))
 
@@ -346,10 +346,10 @@ def build_receipt_html(job):
         '    Exchange / Return sirf 7 din mein\n'
         '  </div>\n'
         '  <div class="divider"></div>\n'
-        '  <div class="center bold" style="margin-top:10px;font-size:19px">\n'
+        '  <div class="center bold" style="margin-top:10px;font-size:20px">\n'
         '    Thank You For Shopping!\n'
         '  </div>\n'
-        '  <div class="center bold" style="font-size:19px;margin-top:8px">\n'
+        '  <div class="center bold" style="font-size:18px;margin-top:8px">\n'
         '    Naye kapdo me jach rahe ho,<br>phir zarur aana :)\n'
         '  </div>\n'
         '\n'
@@ -357,7 +357,7 @@ def build_receipt_html(job):
         '    <img src="{qr_url}" width="110" height="110" style="image-rendering:pixelated" />\n'
         '  </div>\n'
         '  <div class="center" style="font-size:12px;margin-top:3px">\n'
-        '    Accha laga to Google pe ek review de dena\n'
+        '    Accha laga to upar QR scan karein &#8593;<br>Ek review zarur dein\n'
         '  </div>\n'
         '  <div class="double-divider"></div>\n'
         '</div>\n'

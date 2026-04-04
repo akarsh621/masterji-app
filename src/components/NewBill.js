@@ -48,6 +48,8 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [discPercInput, setDiscPercInput] = useState('');
   const [qtyInput, setQtyInput] = useState('1');
   const mrpRef = useRef(null);
+  const [editingItemIdx, setEditingItemIdx] = useState(null);
+  const [editPriceInput, setEditPriceInput] = useState('');
 
   const [screen, setScreen] = useState('items');
 
@@ -132,6 +134,23 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
   const removeItem = (index) => {
     setItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const commitPriceEdit = (index) => {
+    const newPrice = Math.round(parseFloat(editPriceInput) || 0);
+    const item = items[index];
+    if (!item || newPrice <= 0 || newPrice > item.mrp) {
+      setEditingItemIdx(null);
+      setEditPriceInput('');
+      return;
+    }
+    setItems(prev => prev.map((it, i) => {
+      if (i !== index) return it;
+      const discPerc = it.mrp > 0 ? Math.round((1 - newPrice / it.mrp) * 100) : 0;
+      return { ...it, price_per_piece: newPrice, discount_percent: discPerc, amount: newPrice * it.quantity };
+    }));
+    setEditingItemIdx(null);
+    setEditPriceInput('');
   };
 
   const mrpTotal = items.reduce((s, i) => s + (i.mrp * i.quantity), 0);
@@ -477,7 +496,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   </div>
                   <button
                     onClick={() => removeItem(idx)}
-                    className="text-red-500 hover:text-red-700 text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100"
+                    className="text-red-500 hover:text-red-700 text-[10px] font-medium px-1 py-0 rounded bg-red-50 hover:bg-red-100"
                   >
                     Hatao
                   </button>
@@ -485,14 +504,36 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                 {/* Line 2: calculation ... final price */}
                 <div className="flex items-center justify-between mt-0.5 pl-5">
                   <span className="text-xs text-gray-700">
-                    {item.discount_percent > 0
-                      ? `₹${item.mrp} - ${item.discount_percent}% = ₹${item.price_per_piece}${item.quantity > 1 ? ' × ' + item.quantity : ''}`
-                      : `₹${item.mrp}${item.quantity > 1 ? ' × ' + item.quantity : ''}`
-                    }
+                    {item.discount_percent > 0 ? (
+                      item.quantity > 1
+                        ? <>₹{item.mrp} - <span className="font-bold">{item.discount_percent}%</span> = ₹{item.price_per_piece} × {item.quantity}</>
+                        : <>₹{item.mrp} - <span className="font-bold">{item.discount_percent}%</span></>
+                    ) : (
+                      item.quantity > 1
+                        ? <>₹{item.mrp} × {item.quantity}</>
+                        : <>₹{item.mrp}</>
+                    )}
                   </span>
-                  <span className="text-[15px] font-bold text-gray-900">
-                    ₹{item.amount.toLocaleString('en-IN')}
-                  </span>
+                  {editingItemIdx === idx ? (
+                    <input
+                      type="number"
+                      value={editPriceInput}
+                      onChange={e => setEditPriceInput(e.target.value)}
+                      onBlur={() => commitPriceEdit(idx)}
+                      onKeyDown={e => { if (e.key === 'Enter') commitPriceEdit(idx); }}
+                      className="w-20 text-right text-[15px] font-bold text-gray-900 border border-blue-400 rounded px-1 py-0 bg-blue-50 outline-none"
+                      autoFocus
+                      min="1"
+                      max={String(item.mrp)}
+                    />
+                  ) : (
+                    <span
+                      onClick={() => { setEditingItemIdx(idx); setEditPriceInput(String(item.price_per_piece)); }}
+                      className="text-[15px] font-bold text-gray-900 border-b border-dashed border-gray-400 cursor-pointer"
+                    >
+                      ₹{item.amount.toLocaleString('en-IN')}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
