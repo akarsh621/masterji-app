@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS app_state (
     cash_drawer REAL NOT NULL DEFAULT 0,
     petty_cash_target REAL NOT NULL DEFAULT 1000
 );
-INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000);
 CREATE TABLE IF NOT EXISTS print_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bill_id INTEGER NOT NULL REFERENCES bills(id),
@@ -146,8 +145,10 @@ export function getDb() {
 
   db.exec(SCHEMA_SQL);
 
-  // Safe migration for existing DBs
+  // Safe migration for existing DBs that predate petty_cash_target
   try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
+
+  db.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000)");
 
   autoSeed(db);
 

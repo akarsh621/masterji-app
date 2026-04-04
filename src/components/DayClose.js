@@ -21,9 +21,8 @@ export default function DayClose() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editingDrawer, setEditingDrawer] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [drawerInput, setDrawerInput] = useState('');
-  const [editingPetty, setEditingPetty] = useState(false);
   const [pettyInput, setPettyInput] = useState('');
 
   const fetchData = () => {
@@ -40,24 +39,15 @@ export default function DayClose() {
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleSaveDrawer = async () => {
-    const amt = parseFloat(drawerInput);
-    if (!Number.isFinite(amt) || amt < 0) return;
+  const handleSaveBoth = async () => {
+    const drawerAmt = parseFloat(drawerInput);
+    const pettyAmt = parseFloat(pettyInput);
+    if (!Number.isFinite(drawerAmt) || drawerAmt < 0) return;
+    if (!Number.isFinite(pettyAmt) || pettyAmt < 0) return;
     try {
-      await api.setCashDrawer(amt);
-      setEditingDrawer(false);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleSavePetty = async () => {
-    const amt = parseFloat(pettyInput);
-    if (!Number.isFinite(amt) || amt < 0) return;
-    try {
-      await api.setPettyCashTarget(amt);
-      setEditingPetty(false);
+      await api.setCashDrawer(drawerAmt);
+      await api.setPettyCashTarget(pettyAmt);
+      setEditing(false);
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -83,15 +73,19 @@ export default function DayClose() {
         <button onClick={fetchData} className="text-sm text-blue-600">Refresh ↻</button>
       </div>
 
-      {/* Drawer balance */}
+      {/* Hero card: Drawer balance + subscript */}
       <div className="card mb-4 text-center py-6">
         <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cash Drawer</div>
         <div className={`text-4xl font-bold ${cash_drawer >= 0 ? 'text-green-700' : 'text-red-600'}`}>
           ₹{Math.round(cash_drawer).toLocaleString('en-IN')}
         </div>
-        {isAdmin && (
+        <div className="flex justify-center gap-4 mt-2 text-xs text-gray-500">
+          <span>Sale Cash: <span className="font-medium text-gray-700">₹{Math.round(cash_in).toLocaleString('en-IN')}</span></span>
+          <span>Petty Cash: <span className="font-medium text-gray-700">₹{Math.round(petty_cash_target).toLocaleString('en-IN')}</span></span>
+        </div>
+        {isAdmin && !editing && (
           <button
-            onClick={() => { setEditingDrawer(true); setDrawerInput(String(Math.round(cash_drawer))); }}
+            onClick={() => { setEditing(true); setDrawerInput(String(Math.round(cash_drawer))); setPettyInput(String(Math.round(petty_cash_target))); }}
             className="mt-2 text-xs text-blue-600 hover:underline"
           >
             Correct Karo
@@ -99,21 +93,34 @@ export default function DayClose() {
         )}
       </div>
 
-      {editingDrawer && isAdmin && (
-        <div className="card mb-4 space-y-2">
-          <label className="block text-xs text-gray-500">Drawer mein kitna hai? (count karke daalo)</label>
-          <input
-            type="number"
-            value={drawerInput}
-            onChange={e => setDrawerInput(e.target.value)}
-            placeholder="Actual cash in drawer"
-            className="input"
-            min="0"
-            autoFocus
-          />
+      {editing && isAdmin && (
+        <div className="card mb-4 space-y-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Drawer mein kitna hai?</label>
+            <input
+              type="number"
+              value={drawerInput}
+              onChange={e => setDrawerInput(e.target.value)}
+              placeholder="Actual cash in drawer"
+              className="input"
+              min="0"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Petty Cash Target</label>
+            <input
+              type="number"
+              value={pettyInput}
+              onChange={e => setPettyInput(e.target.value)}
+              placeholder="Petty cash target"
+              className="input"
+              min="0"
+            />
+          </div>
           <div className="flex gap-2">
-            <button onClick={handleSaveDrawer} className="btn-primary text-sm px-4">Save</button>
-            <button onClick={() => setEditingDrawer(false)} className="text-sm text-gray-500 px-2">Cancel</button>
+            <button onClick={handleSaveBoth} className="btn-primary text-sm px-4">Save</button>
+            <button onClick={() => setEditing(false)} className="text-sm text-gray-500 px-2">Cancel</button>
           </div>
         </div>
       )}
@@ -153,44 +160,6 @@ export default function DayClose() {
           {!hasCashFlow && (
             <div className="text-sm text-gray-400 text-center py-2">Aaj koi cash movement nahi abhi tak</div>
           )}
-        </div>
-
-        {/* Petty cash target + drawer */}
-        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-1">
-              <span className="text-sm text-gray-500">Petty Cash Target</span>
-              {isAdmin && !editingPetty && (
-                <button
-                  onClick={() => { setEditingPetty(true); setPettyInput(String(Math.round(petty_cash_target))); }}
-                  className="text-xs text-blue-500"
-                >
-                  ✎
-                </button>
-              )}
-            </div>
-            <span className="text-sm font-medium text-gray-600">₹{Math.round(petty_cash_target).toLocaleString('en-IN')}</span>
-          </div>
-          {editingPetty && isAdmin && (
-            <div className="flex gap-2 items-center pb-1">
-              <input
-                type="number"
-                value={pettyInput}
-                onChange={e => setPettyInput(e.target.value)}
-                className="input flex-1 text-sm"
-                min="0"
-                autoFocus
-              />
-              <button onClick={handleSavePetty} className="text-xs font-medium text-white bg-blue-600 rounded px-2.5 py-1.5">Save</button>
-              <button onClick={() => setEditingPetty(false)} className="text-xs text-gray-500">Cancel</button>
-            </div>
-          )}
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-700">Drawer Balance</span>
-            <span className={`text-sm font-bold ${cash_drawer >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-              ₹{Math.round(cash_drawer).toLocaleString('en-IN')}
-            </span>
-          </div>
         </div>
       </div>
 
