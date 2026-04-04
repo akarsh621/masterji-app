@@ -383,40 +383,70 @@ def build_receipt_html(job):
 
 PRINTER_CONTROL_PURGE = 3
 
+JOB_STATUS_PAUSED = 0x00000001
+JOB_STATUS_ERROR = 0x00000002
+JOB_STATUS_DELETING = 0x00000004
+JOB_STATUS_SPOOLING = 0x00000008
+JOB_STATUS_PRINTING = 0x00000010
+JOB_STATUS_OFFLINE = 0x00000020
+JOB_STATUS_PAPEROUT = 0x00000040
+JOB_STATUS_PRINTED = 0x00000080
+JOB_STATUS_DELETED = 0x00000100
+JOB_STATUS_BLOCKED = 0x00000200
+JOB_STATUS_USER_INTERVENTION = 0x00000400
+JOB_STATUS_RESTART = 0x00000800
+JOB_STATUS_COMPLETE = 0x00001000
 
-def flush_spooler(printer_name):
-    """Purge ALL jobs from the printer's spooler queue.
-    If purge fails, restart the entire spooler service as fallback."""
+JOB_STATUS_STUCK = (
+    JOB_STATUS_ERROR
+    | JOB_STATUS_DELETING
+    | JOB_STATUS_OFFLINE
+    | JOB_STATUS_PAPEROUT
+    | JOB_STATUS_BLOCKED
+    | JOB_STATUS_USER_INTERVENTION
+    | JOB_STATUS_RESTART
+)
+
+
+def _list_printer_jobs(printer_name):
+    hprinter = win32print.OpenPrinter(printer_name)
     try:
-        hprinter = win32print.OpenPrinter(printer_name)
-        try:
-            jobs = win32print.EnumJobs(hprinter, 0, 100, 1)
-            if jobs:
-                print('[SPOOLER] {} job(s) in queue, purging...'.format(len(jobs)))
-                win32print.SetPrinter(hprinter, 0, None, PRINTER_CONTROL_PURGE)
-                time.sleep(1)
-                remaining = win32print.EnumJobs(hprinter, 0, 100, 1)
-                if remaining:
-                    print('[SPOOLER] Purge incomplete, restarting spooler service...')
-                    win32print.ClosePrinter(hprinter)
-                    restart_spooler_service()
-                    return
-                print('[SPOOLER] Queue cleared')
-        finally:
+        return win32print.EnumJobs(hprinter, 0, 100, 1)
+    finally:
+        win32print.ClosePrinter(hprinter)
+
+
+def _clear_spool_files():
+    spool_dir = os.path.join(
+        os.environ.get('SystemRoot', r'C:\Windows'),
+        'System32',
+        'spool',
+        'PRINTERS'
+    )
+    removed = 0
+    if not os.path.isdir(spool_dir):
+        return removed
+    for name in os.listdir(spool_dir):
+        path = os.path.join(spool_dir, name)
+        if os.path.isfile(path):
             try:
-                win32print.ClosePrinter(hprinter)
+                os.remove(path)
+                removed += 1
             except Exception:
                 pass
-    except Exception as e:
-        print('[SPOOLER] Purge failed ({}), restarting service...'.format(e))
-        restart_spooler_service()
+    return removed
 
 
-def restart_spooler_service():
-    """Restart the Windows Print Spooler service."""
+def restart_spooler_service(hard=False):
+    """Restart the Windows Print Spooler service.
+    hard=True also deletes stuck spool files from spool/PRINTERS."""
     try:
         subprocess.call(['net', 'stop', 'spooler'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(2)
+        if hard:
+            removed = _clear_spool_files()
+            if removed:
+                print('[SPOOLER] Removed {} stuck spool file(s)'.format(removed))
         subprocess.call(['net', 'start', 'spooler'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(2)
         print('[SPOOLER] Service restarted')
@@ -424,15 +454,79 @@ def restart_spooler_service():
         print('[SPOOLER] Service restart failed: {}'.format(e))
 
 
+def recover_stuck_spooler(printer_name):
+    """If queue has stuck jobs, recover automatically."""
+    try:
+        jobs = _list_printer_jobs(printer_name)
+        stuck = [j for j in jobs if (j.get('Status', 0) & JOB_STATUS_STUCK)]
+        if not stuck:
+            return
+
+        print('[SPOOLER] {} stuck job(s) found. Purging...'.format(len(stuck)))
+        hprinter = win32print.OpenPrinter(printer_name)
+        try:
+            win32print.SetPrinter(hprinter, 0, None, PRINTER_CONTROL_PURGE)
+        finally:
+            win32print.ClosePrinter(hprinter)
+
+        time.sleep(1)
+        remaining = _list_printer_jobs(printer_name)
+        if remaining:
+            print('[SPOOLER] Queue still not clear. Performing hard reset...')
+            restart_spooler_service(hard=True)
+    except Exception as e:
+        print('[SPOOLER] Recover failed ({}). Performing hard reset...'.format(e))
+        restart_spooler_service(hard=True)
+
+
+def wait_for_queue_idle(printer_name, timeout_sec=45):
+    """Wait for queue to become empty and healthy."""
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        jobs = _list_printer_jobs(printer_name)
+        if not jobs:
+            return True
+        if any(j.get('Status', 0) & JOB_STATUS_STUCK for j in jobs):
+            recover_stuck_spooler(printer_name)
+            time.sleep(1)
+        else:
+            time.sleep(1)
+    return False
+
+
+def wait_for_job_completion(printer_name, job_id, timeout_sec=45):
+    """Wait for one specific spooler job to complete."""
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        hprinter = win32print.OpenPrinter(printer_name)
+        try:
+            try:
+                job = win32print.GetJob(hprinter, job_id, 1)
+            except Exception:
+                # Job not found in queue anymore -> treated as completed.
+                return True
+        finally:
+            win32print.ClosePrinter(hprinter)
+
+        status = job.get('Status', 0)
+        if status & JOB_STATUS_STUCK:
+            return False
+        if status & (JOB_STATUS_PRINTED | JOB_STATUS_COMPLETE | JOB_STATUS_DELETED):
+            return True
+        time.sleep(1)
+    return False
+
+
 def send_to_printer(printer_name, data):
-    """Send raw ESC/POS bytes to a Windows printer."""
+    """Send raw ESC/POS bytes to a Windows printer. Returns spool job id."""
     hprinter = win32print.OpenPrinter(printer_name)
     try:
-        win32print.StartDocPrinter(hprinter, 1, ("MasterJi Receipt", None, "RAW"))
+        job_id = win32print.StartDocPrinter(hprinter, 1, ("MasterJi Receipt", None, "RAW"))
         win32print.StartPagePrinter(hprinter)
         win32print.WritePrinter(hprinter, data)
         win32print.EndPagePrinter(hprinter)
         win32print.EndDocPrinter(hprinter)
+        return job_id
     finally:
         win32print.ClosePrinter(hprinter)
 
@@ -567,14 +661,29 @@ def main():
                 try:
                     api.update_job_status(queue_id, 'printing')
 
-                    flush_spooler(printer_name)
+                    recover_stuck_spooler(printer_name)
+                    if not wait_for_queue_idle(printer_name, timeout_sec=45):
+                        raise RuntimeError('Spooler queue busy/stuck for too long')
 
                     if print_mode == 'html':
-                        html = build_receipt_html(job)
-                        send_html_to_printer(printer_name, html)
+                        try:
+                            html = build_receipt_html(job)
+                            send_html_to_printer(printer_name, html)
+                            if not wait_for_queue_idle(printer_name, timeout_sec=45):
+                                raise RuntimeError('HTML print did not clear from spooler')
+                        except Exception:
+                            print('[WARN] HTML mode failed, falling back to RAW')
+                            receipt_data = build_receipt(job)
+                            job_id = send_to_printer(printer_name, receipt_data)
+                            if not wait_for_job_completion(printer_name, job_id, timeout_sec=45):
+                                recover_stuck_spooler(printer_name)
+                                raise RuntimeError('RAW print job stuck in spooler')
                     else:
                         receipt_data = build_receipt(job)
-                        send_to_printer(printer_name, receipt_data)
+                        job_id = send_to_printer(printer_name, receipt_data)
+                        if not wait_for_job_completion(printer_name, job_id, timeout_sec=45):
+                            recover_stuck_spooler(printer_name)
+                            raise RuntimeError('RAW print job stuck in spooler')
 
                     api.update_job_status(queue_id, 'printed')
                     print('[DONE] {} printed successfully'.format(bill_number))
