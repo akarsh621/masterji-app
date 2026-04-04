@@ -8,6 +8,7 @@ Supports two modes: 'raw' (ESC/POS) and 'html' (via Windows printer driver).
 import time
 import sys
 import os
+import subprocess
 import configparser
 import requests
 
@@ -380,38 +381,47 @@ def build_receipt_html(job):
 
 # ── Printer ───────────────────────────────────────────────────────
 
-JOB_STATUS_ERROR   = 0x00000002
-JOB_STATUS_OFFLINE = 0x00000020
-JOB_STATUS_PAPEROUT = 0x00000040
-JOB_STATUS_BLOCKED = 0x00000200
-JOB_STATUS_USER_INTERVENTION = 0x00000400
-JOB_STATUS_STUCK = (JOB_STATUS_ERROR | JOB_STATUS_OFFLINE |
-                    JOB_STATUS_PAPEROUT | JOB_STATUS_BLOCKED |
-                    JOB_STATUS_USER_INTERVENTION)
+PRINTER_CONTROL_PURGE = 3
 
 
 def flush_spooler(printer_name):
-    """Cancel stuck/error jobs in the Windows spooler for this printer only."""
+    """Purge ALL jobs from the printer's spooler queue.
+    If purge fails, restart the entire spooler service as fallback."""
     try:
         hprinter = win32print.OpenPrinter(printer_name)
         try:
             jobs = win32print.EnumJobs(hprinter, 0, 100, 1)
-            cleared = 0
-            for job in jobs:
-                status = job.get('Status', 0)
-                if status & JOB_STATUS_STUCK:
-                    try:
-                        win32print.SetJob(hprinter, job['JobId'],
-                                          0, None, win32print.JOB_CONTROL_DELETE)
-                        cleared += 1
-                    except Exception:
-                        pass
-            if cleared:
-                print('[SPOOLER] Cleared {} stuck job(s)'.format(cleared))
+            if jobs:
+                print('[SPOOLER] {} job(s) in queue, purging...'.format(len(jobs)))
+                win32print.SetPrinter(hprinter, 0, None, PRINTER_CONTROL_PURGE)
+                time.sleep(1)
+                remaining = win32print.EnumJobs(hprinter, 0, 100, 1)
+                if remaining:
+                    print('[SPOOLER] Purge incomplete, restarting spooler service...')
+                    win32print.ClosePrinter(hprinter)
+                    restart_spooler_service()
+                    return
+                print('[SPOOLER] Queue cleared')
         finally:
-            win32print.ClosePrinter(hprinter)
+            try:
+                win32print.ClosePrinter(hprinter)
+            except Exception:
+                pass
     except Exception as e:
-        print('[SPOOLER] Warning: {}'.format(e))
+        print('[SPOOLER] Purge failed ({}), restarting service...'.format(e))
+        restart_spooler_service()
+
+
+def restart_spooler_service():
+    """Restart the Windows Print Spooler service."""
+    try:
+        subprocess.call(['net', 'stop', 'spooler'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        time.sleep(2)
+        subprocess.call(['net', 'start', 'spooler'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        time.sleep(2)
+        print('[SPOOLER] Service restarted')
+    except Exception as e:
+        print('[SPOOLER] Service restart failed: {}'.format(e))
 
 
 def send_to_printer(printer_name, data):
@@ -440,8 +450,17 @@ def send_html_to_printer(printer_name, html):
 
     try:
         win32print.SetDefaultPrinter(printer_name)
-        win32api.ShellExecute(0, 'print', RECEIPT_HTML_PATH, None, '.', 0)
-        time.sleep(3)
+        filepath = os.path.abspath(RECEIPT_HTML_PATH)
+        subprocess.call(
+            ['rundll32', 'mshtml.dll,PrintHTML', filepath],
+            timeout=15
+        )
+        time.sleep(2)
+    except subprocess.TimeoutExpired:
+        print('[WARN] HTML print timed out, job may still be in spooler')
+    except Exception as e:
+        print('[ERROR] HTML print failed: {}'.format(e))
+        raise
     finally:
         if old_default:
             try:
