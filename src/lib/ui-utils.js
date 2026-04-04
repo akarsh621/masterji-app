@@ -16,6 +16,8 @@ export const REASON_LABELS = {
   supplier: 'Supplier',
   owner: 'Cash / Sale Withdrawal',
   other: 'Other',
+  sweep: 'Daily Sweep',
+  manual: 'Cash Out',
 };
 
 export const GROUP_LABELS = {

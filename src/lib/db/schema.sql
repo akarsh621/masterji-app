@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS bill_payments (
 CREATE TABLE IF NOT EXISTS cash_out (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     amount REAL NOT NULL CHECK(amount > 0),
-    reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other')),
+    reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other', 'sweep', 'manual')),
     note TEXT,
     recorded_by INTEGER NOT NULL REFERENCES users(id),
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
@@ -65,9 +65,10 @@ CREATE TABLE IF NOT EXISTS cash_out (
 -- Single-row table holding persistent app state
 CREATE TABLE IF NOT EXISTS app_state (
     id INTEGER PRIMARY KEY CHECK(id = 1),
-    cash_drawer REAL NOT NULL DEFAULT 0
+    cash_drawer REAL NOT NULL DEFAULT 0,
+    petty_cash_target REAL NOT NULL DEFAULT 1000
 );
-INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0);
+INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000);
 
 CREATE TABLE IF NOT EXISTS print_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

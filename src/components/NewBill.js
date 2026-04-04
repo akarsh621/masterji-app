@@ -52,6 +52,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [editPriceInput, setEditPriceInput] = useState('');
 
   const [screen, setScreen] = useState('items');
+  const [saleByOpen, setSaleByOpen] = useState(false);
 
   const [primaryMode, setPrimaryMode] = useState('cash');
   const [splitEnabled, setSplitEnabled] = useState(false);
@@ -78,12 +79,12 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       }
       setFlatCategories(flat);
     }).catch(() => {});
-    if (isAdmin) {
-      api.getUsers().then(d => {
-        const list = (d.users || []).filter(u => u.role === 'salesman' && u.active);
-        setSalesmen(list);
-      }).catch(() => {});
-    }
+    api.getSalesmen().then(d => {
+      setSalesmen(d.salesmen || []);
+      if (!isAdmin && user?.id) {
+        setSelectedSalesmanId(user.id);
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -210,7 +211,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         discount_amount: billDiscountAmount,
         notes,
       };
-      if (isAdmin && selectedSalesmanId) {
+      if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
       }
       const result = await api.createBill(billPayload);
@@ -313,33 +314,6 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
         {error && (
           <div className="mb-3 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
-        )}
-
-        {isAdmin && salesmen.length > 0 && (
-          <div className="mb-3">
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Bill Kiske Naam</div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => setSelectedSalesmanId(null)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  !selectedSalesmanId ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-700 border-gray-200'
-                }`}
-              >
-                Owner
-              </button>
-              {salesmen.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => setSelectedSalesmanId(s.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    selectedSalesmanId === s.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-700 border-gray-200'
-                  }`}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          </div>
         )}
 
         {/* Category bar */}
@@ -600,6 +574,53 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
           totalDiscountPercent={totalDiscountPercent}
         />
       </div>
+
+      {/* Salesman selector -- compact */}
+      {salesmen.length > 0 && (
+        <div className="mb-3">
+          {!saleByOpen ? (
+            <button
+              onClick={() => setSaleByOpen(true)}
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <span className="text-gray-400">Sale by:</span>
+              <span className="font-medium">
+                {selectedSalesmanId
+                  ? salesmen.find(s => s.id === selectedSalesmanId)?.name || 'Unknown'
+                  : (isAdmin ? 'Owner' : user?.name || 'Me')}
+              </span>
+              <span className="text-xs text-blue-500">✎</span>
+            </button>
+          ) : (
+            <div className="p-2.5 bg-gray-50 rounded-lg">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Sale by</div>
+              <div className="flex flex-wrap gap-1.5">
+                {isAdmin && (
+                  <button
+                    onClick={() => { setSelectedSalesmanId(null); setSaleByOpen(false); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      !selectedSalesmanId ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'
+                    }`}
+                  >
+                    Owner
+                  </button>
+                )}
+                {salesmen.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => { setSelectedSalesmanId(s.id); setSaleByOpen(false); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      selectedSalesmanId === s.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card space-y-3">
         {/* Bill-level discount */}

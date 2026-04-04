@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb, getCashDrawer } from '@/lib/db';
+import { getDb, getCashDrawer, getPettyCashTarget } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
 export async function GET(request) {
@@ -47,10 +47,14 @@ export async function GET(request) {
         COALESCE(SUM(CASE WHEN reason = 'expense' THEN amount ELSE 0 END), 0) as expense_total,
         COALESCE(SUM(CASE WHEN reason = 'supplier' THEN amount ELSE 0 END), 0) as supplier_total,
         COALESCE(SUM(CASE WHEN reason = 'owner' THEN amount ELSE 0 END), 0) as owner_total,
-        COALESCE(SUM(CASE WHEN reason = 'other' THEN amount ELSE 0 END), 0) as other_total
+        COALESCE(SUM(CASE WHEN reason = 'other' THEN amount ELSE 0 END), 0) as other_total,
+        COALESCE(SUM(CASE WHEN reason = 'sweep' THEN amount ELSE 0 END), 0) as sweep_total,
+        COALESCE(SUM(CASE WHEN reason = 'manual' THEN amount ELSE 0 END), 0) as manual_total
       FROM cash_out
       WHERE date(created_at) = date('now', '+5 hours', '+30 minutes')
     `).get();
+
+    const pettyCashTarget = getPettyCashTarget(db);
 
     const cashOutEntries = db.prepare(`
       SELECT co.*, u.name as recorded_by_name
@@ -65,6 +69,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       cash_drawer: cashDrawer,
+      petty_cash_target: pettyCashTarget,
       cash_in: cashIn,
       cash_refunds: cashRefunds,
       cash_out: cashOutSummary,

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb, getCashDrawer, setCashDrawer } from '@/lib/db';
+import { getDb, getCashDrawer, setCashDrawer, setPettyCashTarget } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
 export async function GET(request) {
@@ -39,5 +39,31 @@ export async function PUT(request) {
   } catch (err) {
     console.error('Cash drawer set error:', err);
     return NextResponse.json({ error: 'Cash drawer set karne mein gadbad' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const result = requireAuth(request);
+    if (result.error) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    if (result.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Sirf admin petty cash target set kar sakta hai' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const amount = Number(body?.petty_cash_target);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return NextResponse.json({ error: 'Petty cash target 0 ya usse zyada hona chahiye' }, { status: 400 });
+    }
+
+    const db = getDb();
+    setPettyCashTarget(db, amount);
+
+    return NextResponse.json({ message: 'Petty cash target set ho gaya', petty_cash_target: amount });
+  } catch (err) {
+    console.error('Petty cash target error:', err);
+    return NextResponse.json({ error: 'Petty cash target set karne mein gadbad' }, { status: 500 });
   }
 }

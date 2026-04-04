@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [trendMode, setTrendMode] = useState('weekly');
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = (v, from, to) => {
     setLoading(true);
@@ -50,6 +51,8 @@ export default function Dashboard() {
   };
 
   const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       const params = {};
       const today = getISTDateInputValue();
@@ -84,7 +87,9 @@ export default function Dashboard() {
       a.download = `masterji-bills-${view}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch { }
+    } catch { } finally {
+      setExporting(false);
+    }
   };
 
   if (loading && !data) {
@@ -101,11 +106,11 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold">Dashboard</h2>
         <div className="flex gap-2">
-          <button onClick={handleExport} className="text-sm text-green-600">
-            ⬇ Export
+          <button onClick={handleExport} disabled={exporting} className={`text-sm ${exporting ? 'text-gray-400' : 'text-green-600'}`}>
+            {exporting ? '⬇ Exporting...' : '⬇ Export'}
           </button>
-          <button onClick={() => fetchData(view, customFrom, customTo)} className="text-sm text-blue-600">
-            Refresh ↻
+          <button onClick={() => fetchData(view, customFrom, customTo)} disabled={loading} className={`text-sm ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
+            {loading ? 'Refreshing...' : 'Refresh ↻'}
           </button>
         </div>
       </div>
@@ -222,7 +227,7 @@ export default function Dashboard() {
       )}
 
       {(() => {
-        const showToggle = (view === 'month' || view === 'custom') && weeklyTrend && weeklyTrend.length > 0;
+        const showToggle = (view === 'month' || view === 'custom') && weeklyTrend && weeklyTrend.length >= 2;
         const useWeekly = showToggle && trendMode === 'weekly';
         const trendData = useWeekly ? weeklyTrend : dailyTrend;
 

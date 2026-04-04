@@ -61,16 +61,17 @@ CREATE TABLE IF NOT EXISTS bill_payments (
 CREATE TABLE IF NOT EXISTS cash_out (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     amount REAL NOT NULL CHECK(amount > 0),
-    reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other')),
+    reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other', 'sweep', 'manual')),
     note TEXT,
     recorded_by INTEGER NOT NULL REFERENCES users(id),
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
 );
 CREATE TABLE IF NOT EXISTS app_state (
     id INTEGER PRIMARY KEY CHECK(id = 1),
-    cash_drawer REAL NOT NULL DEFAULT 0
+    cash_drawer REAL NOT NULL DEFAULT 0,
+    petty_cash_target REAL NOT NULL DEFAULT 1000
 );
-INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0);
+INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000);
 CREATE TABLE IF NOT EXISTS print_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bill_id INTEGER NOT NULL REFERENCES bills(id),
@@ -145,6 +146,9 @@ export function getDb() {
 
   db.exec(SCHEMA_SQL);
 
+  // Safe migration for existing DBs
+  try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
+
   autoSeed(db);
 
   return db;
@@ -174,4 +178,17 @@ export function updateCashDrawer(db, delta) {
 
 export function setCashDrawer(db, amount) {
   db.prepare('UPDATE app_state SET cash_drawer = ? WHERE id = 1').run(amount);
+}
+
+export function getPettyCashTarget(db) {
+  try {
+    const row = db.prepare('SELECT petty_cash_target FROM app_state WHERE id = 1').get();
+    return row?.petty_cash_target ?? 1000;
+  } catch {
+    return 1000;
+  }
+}
+
+export function setPettyCashTarget(db, amount) {
+  db.prepare('UPDATE app_state SET petty_cash_target = ? WHERE id = 1').run(amount);
 }

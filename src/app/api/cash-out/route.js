@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb, updateCashDrawer } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
-const VALID_REASONS = new Set(['expense', 'supplier', 'owner', 'other']);
-const REASON_LABELS = { expense: 'Kharcha', supplier: 'Supplier Payment', owner: 'Owner Withdrawal', other: 'Other' };
+const VALID_REASONS = new Set(['expense', 'supplier', 'owner', 'other', 'sweep', 'manual']);
+const REASON_LABELS = { expense: 'Kharcha', supplier: 'Supplier Payment', owner: 'Owner Withdrawal', other: 'Other', sweep: 'Daily Sweep', manual: 'Manual Cash Out' };
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(request) {
@@ -22,7 +22,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Amount 0 se zyada hona chahiye' }, { status: 400 });
     }
     if (!VALID_REASONS.has(reason)) {
-      return NextResponse.json({ error: 'Reason galat hai — expense, supplier, owner ya other hona chahiye' }, { status: 400 });
+      return NextResponse.json({ error: 'Reason galat hai' }, { status: 400 });
+    }
+    if (reason === 'sweep' && result.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Sirf admin sweep kar sakta hai' }, { status: 403 });
+    }
+    if (reason === 'manual' && !note) {
+      return NextResponse.json({ error: 'Cash out mein note zaroori hai' }, { status: 400 });
     }
 
     const db = getDb();

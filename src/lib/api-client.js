@@ -62,6 +62,7 @@ export const api = {
 
   getCashDrawer: () => apiRequest('/cash-drawer'),
   setCashDrawer: (amount) => apiRequest('/cash-drawer', { method: 'PUT', body: JSON.stringify({ amount }) }),
+  setPettyCashTarget: (amount) => apiRequest('/cash-drawer', { method: 'PATCH', body: JSON.stringify({ petty_cash_target: amount }) }),
 
   getCashOut: (params) => {
     const qs = new URLSearchParams(params).toString();

@@ -110,7 +110,7 @@ export async function POST(request) {
     let effectiveSalesmanId = result.user.id;
     let effectiveSalesmanName = result.user.name;
     const requestedSalesmanId = body?.salesman_id ? Number(body.salesman_id) : null;
-    if (requestedSalesmanId && result.user.role === 'admin') {
+    if (requestedSalesmanId) {
       const targetUser = db.prepare('SELECT id, name, active FROM users WHERE id = ?').get(requestedSalesmanId);
       if (!targetUser || !targetUser.active) {
         return NextResponse.json({ error: 'Selected salesman invalid hai' }, { status: 400 });
