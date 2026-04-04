@@ -148,6 +148,33 @@ export function getDb() {
   // Safe migration for existing DBs that predate petty_cash_target
   try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
 
+  // Migrate cash_out CHECK constraint to include 'sweep' and 'manual'
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cash_out'").get();
+    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'sweep'")) {
+      console.log('Migrating cash_out table to add sweep/manual reasons...');
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(`CREATE TABLE cash_out_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          amount REAL NOT NULL CHECK(amount > 0),
+          reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other', 'sweep', 'manual')),
+          note TEXT,
+          recorded_by INTEGER NOT NULL REFERENCES users(id),
+          created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+        )`);
+        db.exec('INSERT INTO cash_out_new SELECT * FROM cash_out');
+        db.exec('DROP TABLE cash_out');
+        db.exec('ALTER TABLE cash_out_new RENAME TO cash_out');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_cash_out_created_at ON cash_out(created_at)');
+      })();
+      db.pragma('foreign_keys = ON');
+      console.log('cash_out migration complete.');
+    }
+  } catch (err) {
+    console.error('cash_out migration error (non-fatal):', err.message);
+  }
+
   db.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000)");
 
   autoSeed(db);

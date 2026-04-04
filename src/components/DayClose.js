@@ -22,8 +22,11 @@ export default function DayClose() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
   const [drawerInput, setDrawerInput] = useState('');
   const [pettyInput, setPettyInput] = useState('');
+  const [sweepInput, setSweepInput] = useState('');
+  const [sweepSubmitting, setSweepSubmitting] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -61,6 +64,24 @@ export default function DayClose() {
 
   const { cash_drawer, petty_cash_target, cash_in, cash_refunds, cash_out, cash_out_entries, payment_split, sales } = data;
 
+  const sweepDefault = Math.max(0, Math.round(cash_drawer - petty_cash_target));
+
+  const handleSweep = async () => {
+    const amt = parseFloat(sweepInput || sweepDefault);
+    if (!amt || amt <= 0) return;
+    setSweepSubmitting(true);
+    try {
+      await api.createCashOut({ amount: amt, reason: 'sweep', note: 'Daily sweep' });
+      setSweeping(false);
+      setSweepInput('');
+      fetchData();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSweepSubmitting(false);
+    }
+  };
+
   const sweepTotal = cash_out.sweep_total || 0;
   const manualTotal = (cash_out.manual_total || 0) + (cash_out.expense_total || 0)
     + (cash_out.supplier_total || 0) + (cash_out.owner_total || 0) + (cash_out.other_total || 0);
@@ -73,7 +94,7 @@ export default function DayClose() {
         <button onClick={fetchData} className="text-sm text-blue-600">Refresh ↻</button>
       </div>
 
-      {/* Hero card: Drawer balance + subscript */}
+      {/* Hero card: Drawer balance + actions */}
       <div className="card mb-4 text-center py-6">
         <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cash Drawer</div>
         <div className={`text-4xl font-bold ${cash_drawer >= 0 ? 'text-green-700' : 'text-red-600'}`}>
@@ -83,47 +104,88 @@ export default function DayClose() {
           <span>Sale Cash: <span className="font-medium text-gray-700">₹{Math.round(cash_in).toLocaleString('en-IN')}</span></span>
           <span>Petty Cash: <span className="font-medium text-gray-700">₹{Math.round(petty_cash_target).toLocaleString('en-IN')}</span></span>
         </div>
-        {isAdmin && !editing && (
-          <button
-            onClick={() => { setEditing(true); setDrawerInput(String(Math.round(cash_drawer))); setPettyInput(String(Math.round(petty_cash_target))); }}
-            className="mt-2 text-xs text-blue-600 hover:underline"
-          >
-            Correct Karo
-          </button>
+
+        {isAdmin && !editing && !sweeping && (
+          <div className="flex justify-center gap-4 mt-3">
+            <button
+              onClick={() => { setEditing(true); setSweeping(false); setDrawerInput(String(Math.round(cash_drawer))); setPettyInput(String(Math.round(petty_cash_target))); }}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              Correct Karo
+            </button>
+            {sweepDefault > 0 && (
+              <button
+                onClick={() => { setSweeping(true); setEditing(false); setSweepInput(''); }}
+                className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1 hover:bg-green-100 transition-colors"
+              >
+                Sweep Karo
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Inline: Correct Karo form */}
+        {editing && isAdmin && (
+          <div className="mt-4 pt-4 border-t border-gray-100 text-left space-y-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Drawer mein kitna hai?</label>
+              <input
+                type="number"
+                value={drawerInput}
+                onChange={e => setDrawerInput(e.target.value)}
+                placeholder="Actual cash in drawer"
+                className="input"
+                min="0"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Petty Cash Target</label>
+              <input
+                type="number"
+                value={pettyInput}
+                onChange={e => setPettyInput(e.target.value)}
+                placeholder="Petty cash target"
+                className="input"
+                min="0"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleSaveBoth} className="btn-primary text-sm px-4">Save</button>
+              <button onClick={() => setEditing(false)} className="text-sm text-gray-500 px-2">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Inline: Sweep Karo form */}
+        {sweeping && isAdmin && (
+          <div className="mt-4 pt-4 border-t border-gray-100 text-left space-y-2">
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>Nikalo: ₹{sweepDefault.toLocaleString('en-IN')}</span>
+              <span>Drawer mein rahega: ₹{Math.round(petty_cash_target).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={sweepInput}
+                onChange={e => setSweepInput(e.target.value)}
+                placeholder={`₹${sweepDefault.toLocaleString('en-IN')}`}
+                className="input flex-1 text-lg font-bold"
+                min="1"
+                autoFocus
+              />
+              <button
+                onClick={handleSweep}
+                disabled={sweepSubmitting}
+                className="px-5 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 active:bg-green-800 transition-colors disabled:bg-gray-300"
+              >
+                {sweepSubmitting ? '...' : 'Sweep'}
+              </button>
+            </div>
+            <button onClick={() => setSweeping(false)} className="text-xs text-gray-500 hover:underline">Cancel</button>
+          </div>
         )}
       </div>
-
-      {editing && isAdmin && (
-        <div className="card mb-4 space-y-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Drawer mein kitna hai?</label>
-            <input
-              type="number"
-              value={drawerInput}
-              onChange={e => setDrawerInput(e.target.value)}
-              placeholder="Actual cash in drawer"
-              className="input"
-              min="0"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Petty Cash Target</label>
-            <input
-              type="number"
-              value={pettyInput}
-              onChange={e => setPettyInput(e.target.value)}
-              placeholder="Petty cash target"
-              className="input"
-              min="0"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleSaveBoth} className="btn-primary text-sm px-4">Save</button>
-            <button onClick={() => setEditing(false)} className="text-sm text-gray-500 px-2">Cancel</button>
-          </div>
-        </div>
-      )}
 
       {/* Cash flow */}
       <div className="card mb-4">
@@ -165,12 +227,7 @@ export default function DayClose() {
 
       {/* Cash out actions */}
       <div className="mb-4">
-        <CashOutForm
-          onSuccess={fetchData}
-          cashDrawer={cash_drawer}
-          pettyCashTarget={petty_cash_target}
-          isAdmin={isAdmin}
-        />
+        <CashOutForm onSuccess={fetchData} />
       </div>
 
       {/* Payment breakdown */}
