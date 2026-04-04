@@ -496,13 +496,13 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   </div>
                   <button
                     onClick={() => removeItem(idx)}
-                    className="text-red-500 hover:text-red-700 text-[10px] font-medium px-1 py-0 rounded bg-red-50 hover:bg-red-100"
+                    className="text-red-400 hover:text-red-600 text-[9px] font-medium px-0.5 rounded bg-red-50 hover:bg-red-100 leading-tight"
                   >
                     Hatao
                   </button>
                 </div>
                 {/* Line 2: calculation ... final price */}
-                <div className="flex items-center justify-between mt-0.5 pl-5">
+                <div className="flex items-center justify-between mt-1.5 pl-5">
                   <span className="text-xs text-gray-700">
                     {item.discount_percent > 0 ? (
                       item.quantity > 1
