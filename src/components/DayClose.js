@@ -91,7 +91,9 @@ export default function DayClose() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold">Aaj ka Hisaab</h2>
-        <button onClick={fetchData} className="text-sm text-blue-600">Refresh ↻</button>
+        <button onClick={fetchData} disabled={loading} className={`text-sm ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
+          {loading ? 'Refreshing...' : 'Refresh ↻'}
+        </button>
       </div>
 
       {/* Hero card: Drawer balance + actions */}

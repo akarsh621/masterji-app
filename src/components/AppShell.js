@@ -16,8 +16,8 @@ const SALES_TABS = [
 ];
 
 const ADMIN_TABS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📈' },
   { id: 'new-bill', label: 'Naya Bill', icon: '＋' },
+  { id: 'dashboard', label: 'Dashboard', icon: '📈' },
   { id: 'hisaab', label: 'Hisaab', icon: '💰' },
   { id: 'history', label: 'Bill Book', icon: '📋' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
@@ -27,7 +27,7 @@ export default function AppShell() {
   const { user, logout, dbMode } = useAuth();
   const isAdmin = user?.role === 'admin';
   const tabs = isAdmin ? ADMIN_TABS : SALES_TABS;
-  const [activeTab, setActiveTab] = useState(isAdmin ? 'dashboard' : 'new-bill');
+  const [activeTab, setActiveTab] = useState('new-bill');
   const [prefillData, setPrefillData] = useState(null);
 
   const handleVoidAndRecreate = useCallback((data) => {

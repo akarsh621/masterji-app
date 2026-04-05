@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
     mrp REAL CHECK(mrp > 0),
     quantity INTEGER NOT NULL CHECK(quantity > 0),
     amount REAL NOT NULL CHECK(amount > 0),
+    cost_price REAL DEFAULT NULL CHECK(cost_price >= 0),
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
 );
 

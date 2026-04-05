@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
     mrp REAL CHECK(mrp > 0),
     quantity INTEGER NOT NULL CHECK(quantity > 0),
     amount REAL NOT NULL CHECK(amount > 0),
+    cost_price REAL DEFAULT NULL CHECK(cost_price >= 0),
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
 );
 CREATE TABLE IF NOT EXISTS bill_payments (
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS cash_out (
 CREATE TABLE IF NOT EXISTS app_state (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     cash_drawer REAL NOT NULL DEFAULT 0,
-    petty_cash_target REAL NOT NULL DEFAULT 1000
+    petty_cash_target REAL NOT NULL DEFAULT 1000,
+    schema_version INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS print_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,6 +102,58 @@ const DEFAULT_CATEGORIES = [
   ['Shirt', 'men', 13], ['T-shirt', 'men', 14], ['Pant', 'men', 15],
   ['Jeans', 'men', 16], ['Other', 'other', 99],
 ];
+
+const MIGRATIONS = [
+  // v1: Add petty_cash_target to app_state
+  (db) => {
+    try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
+  },
+  // v2: Add sweep/manual to cash_out CHECK constraint (legacy, kept for version tracking)
+  (db) => {
+    const info = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cash_out'").get();
+    if (info?.sql && !info.sql.includes("'sweep'")) {
+      db.pragma('foreign_keys = OFF');
+      db.exec(`CREATE TABLE cash_out_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount REAL NOT NULL CHECK(amount > 0),
+        reason TEXT NOT NULL CHECK(reason IN ('expense','supplier','owner','other','sweep','manual')),
+        note TEXT,
+        recorded_by INTEGER NOT NULL REFERENCES users(id),
+        created_at DATETIME DEFAULT (datetime('now','+5 hours','+30 minutes'))
+      )`);
+      db.exec('INSERT INTO cash_out_new SELECT * FROM cash_out');
+      db.exec('DROP TABLE cash_out');
+      db.exec('ALTER TABLE cash_out_new RENAME TO cash_out');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_cash_out_created_at ON cash_out(created_at)');
+      db.pragma('foreign_keys = ON');
+    }
+  },
+  // v3: Add cost_price to bill_items
+  (db) => {
+    try { db.exec("ALTER TABLE bill_items ADD COLUMN cost_price REAL DEFAULT NULL CHECK(cost_price >= 0)"); } catch {}
+  },
+];
+
+function runMigrations(db) {
+  try { db.exec("ALTER TABLE app_state ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 0"); } catch {}
+
+  let current = 0;
+  try {
+    const row = db.prepare('SELECT schema_version FROM app_state WHERE id = 1').get();
+    current = row?.schema_version ?? 0;
+  } catch { /* column doesn't exist yet on first run before app_state row exists */ }
+
+  if (current >= MIGRATIONS.length) return;
+
+  for (let i = current; i < MIGRATIONS.length; i++) {
+    console.log(`Running migration v${i + 1}...`);
+    db.transaction(() => {
+      MIGRATIONS[i](db);
+      db.prepare('UPDATE app_state SET schema_version = ? WHERE id = 1').run(i + 1);
+    })();
+    console.log(`Migration v${i + 1} complete.`);
+  }
+}
 
 function autoSeed(db) {
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
@@ -144,38 +198,8 @@ export function getDb() {
   db.pragma('foreign_keys = ON');
 
   db.exec(SCHEMA_SQL);
-
-  // Safe migration for existing DBs that predate petty_cash_target
-  try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
-
-  // Migrate cash_out CHECK constraint to include 'sweep' and 'manual'
-  try {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cash_out'").get();
-    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes("'sweep'")) {
-      console.log('Migrating cash_out table to add sweep/manual reasons...');
-      db.pragma('foreign_keys = OFF');
-      db.transaction(() => {
-        db.exec(`CREATE TABLE cash_out_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          amount REAL NOT NULL CHECK(amount > 0),
-          reason TEXT NOT NULL CHECK(reason IN ('expense', 'supplier', 'owner', 'other', 'sweep', 'manual')),
-          note TEXT,
-          recorded_by INTEGER NOT NULL REFERENCES users(id),
-          created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
-        )`);
-        db.exec('INSERT INTO cash_out_new SELECT * FROM cash_out');
-        db.exec('DROP TABLE cash_out');
-        db.exec('ALTER TABLE cash_out_new RENAME TO cash_out');
-        db.exec('CREATE INDEX IF NOT EXISTS idx_cash_out_created_at ON cash_out(created_at)');
-      })();
-      db.pragma('foreign_keys = ON');
-      console.log('cash_out migration complete.');
-    }
-  } catch (err) {
-    console.error('cash_out migration error (non-fatal):', err.message);
-  }
-
-  db.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer, petty_cash_target) VALUES (1, 0, 1000)");
+  db.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0)");
+  runMigrations(db);
 
   autoSeed(db);
 
@@ -209,12 +233,8 @@ export function setCashDrawer(db, amount) {
 }
 
 export function getPettyCashTarget(db) {
-  try {
-    const row = db.prepare('SELECT petty_cash_target FROM app_state WHERE id = 1').get();
-    return row?.petty_cash_target ?? 1000;
-  } catch {
-    return 1000;
-  }
+  const row = db.prepare('SELECT petty_cash_target FROM app_state WHERE id = 1').get();
+  return row?.petty_cash_target ?? 1000;
 }
 
 export function setPettyCashTarget(db, amount) {
