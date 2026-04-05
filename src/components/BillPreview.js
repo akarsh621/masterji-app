@@ -23,7 +23,7 @@ export default function BillPreview({
           ? Math.round(((item.mrp * item.qty - item.amount) / (item.mrp * item.qty)) * 100)
           : 0;
         return (
-          <div key={idx} className={`flex justify-between ${compact ? 'py-0.5 text-xs' : 'py-1 text-sm'}`}>
+          <div key={idx} className={`flex justify-between ${compact ? 'py-0.5 text-xs' : 'py-1.5 text-base'}`}>
             <span className="text-gray-700">
               {idx + 1}. {item.name}
               {discPerc > 0 ? ` — ₹${item.mrp} -${discPerc}%` : ` — ₹${item.mrp}`}
@@ -36,18 +36,18 @@ export default function BillPreview({
 
       {/* Summary */}
       <div className="border-t border-gray-200 mt-2 pt-2 space-y-0.5">
-        <div className={`flex justify-between ${compact ? 'text-xs' : 'text-sm'} text-gray-500`}>
+        <div className={`flex justify-between ${compact ? 'text-xs' : 'text-base'} text-gray-500`}>
           <span>MRP Total</span>
           <span>₹{fmt(mrpTotal)}</span>
         </div>
         {sellingTotal !== undefined && sellingTotal !== total && (
-          <div className={`flex justify-between ${compact ? 'text-xs' : 'text-sm'} font-bold`}>
+          <div className={`flex justify-between ${compact ? 'text-xs' : 'text-base'} font-bold`}>
             <span>Selling Total</span>
             <span>₹{fmt(sellingTotal)}</span>
           </div>
         )}
         {totalDiscount > 0 && (
-          <div className={`flex justify-between ${compact ? 'text-xs' : 'text-sm'} text-orange-600 font-semibold`}>
+          <div className={`flex justify-between ${compact ? 'text-xs' : 'text-base'} text-orange-600 font-semibold`}>
             <span>Discount ({totalDiscountPercent}% off MRP)</span>
             <span>-₹{fmt(totalDiscount)}</span>
           </div>

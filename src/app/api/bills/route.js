@@ -262,10 +262,7 @@ export async function GET(request) {
     let where = ['b.deleted_at IS NULL'];
     let params = [];
 
-    if (result.user.role === 'salesman') {
-      where.push('b.salesman_id = ?');
-      params.push(result.user.id);
-    } else if (salesman_id) {
+    if (salesman_id) {
       const salesmanIdNumber = Number(salesman_id);
       if (!Number.isInteger(salesmanIdNumber) || salesmanIdNumber <= 0) {
         return NextResponse.json({ error: 'Salesman filter invalid hai' }, { status: 400 });

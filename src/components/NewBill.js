@@ -54,7 +54,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [screen, setScreen] = useState('items');
   const [saleByOpen, setSaleByOpen] = useState(false);
 
-  const [primaryMode, setPrimaryMode] = useState('cash');
+  const [primaryMode, setPrimaryMode] = useState('upi');
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitMode, setSplitMode] = useState('upi');
   const [splitAmount, setSplitAmount] = useState('');
@@ -176,13 +176,18 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const totalDiscount = itemDiscount + billDiscountAmount;
   const totalDiscountPercent = mrpTotal > 0 ? Math.round((totalDiscount / mrpTotal) * 100) : 0;
 
+  const isCashOnly = primaryMode === 'cash' && !splitEnabled;
+  const cashRounded = total < 10 ? total : Math.floor(total / 10) * 10;
+  const displayTotal = isCashOnly ? cashRounded : total;
+  const cashRoundOff = isCashOnly ? total - cashRounded : 0;
+
   const buildPayments = () => {
     if (!splitEnabled || !splitAmount) {
-      return [{ mode: primaryMode, amount: total }];
+      return [{ mode: primaryMode, amount: displayTotal }];
     }
     const splitAmt = Math.round(parseFloat(splitAmount) * 100) / 100;
     if (splitAmt <= 0 || splitAmt >= total) {
-      return [{ mode: primaryMode, amount: total }];
+      return [{ mode: primaryMode, amount: displayTotal }];
     }
     const primaryAmt = Math.round((total - splitAmt) * 100) / 100;
     return [
@@ -208,7 +213,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         payments,
         mrp_total: mrpTotal,
         discount_percent: billDiscountPercent,
-        discount_amount: billDiscountAmount,
+        discount_amount: billDiscountAmount + cashRoundOff,
         notes,
       };
       if (selectedSalesmanId) {
@@ -221,7 +226,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       setDiscountMode('none');
       setNotes('');
       setShowNotes(false);
-      setPrimaryMode('cash');
+      setPrimaryMode('upi');
       setSplitEnabled(false);
       setSplitAmount('');
       setScreen('items');
@@ -319,7 +324,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         {/* Category bar */}
         {Object.entries(categories).map(([group, cats]) => (
           <div key={group} className="mb-2">
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
               {GROUP_LABELS[group] || group}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -330,7 +335,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                     setSelectedCategoryId(cat.id);
                     setTimeout(() => mrpRef.current?.focus(), 100);
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all active:scale-95 ${
+                  className={`px-3.5 py-2 rounded-lg text-sm font-medium border transition-all active:scale-95 ${
                     selectedCategoryId === cat.id
                       ? SELECTED_GROUP_COLORS[group] || SELECTED_GROUP_COLORS.other
                       : GROUP_COLORS[group] || GROUP_COLORS.other
@@ -347,10 +352,10 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         {selectedCat && (
           <>
             <div className="py-2 border-t border-gray-200 mt-1 mb-1">
-              <span className="text-sm font-semibold text-gray-900">
+              <span className="text-base font-semibold text-gray-900">
                 Adding: <strong>{selectedCat.name}</strong>
               </span>
-              <span className="text-xs text-gray-500 ml-1">
+              <span className="text-sm text-gray-500 ml-1">
                 ({GROUP_LABELS[selectedCat.group_name] || selectedCat.group_name})
               </span>
             </div>
@@ -358,7 +363,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
             <div className="card space-y-2">
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-0.5">MRP (₹)</label>
+                  <label className="block text-sm text-gray-500 mb-0.5">MRP (₹)</label>
                   <input
                     ref={mrpRef}
                     type="number"
@@ -370,7 +375,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-0.5">Discount %</label>
+                  <label className="block text-sm text-gray-500 mb-0.5">Discount %</label>
                   <input
                     type="number"
                     value={discPercInput}
@@ -385,7 +390,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
               </div>
 
               {/* Live calculation */}
-              <div className="text-sm font-semibold text-orange-600 min-h-[20px]">
+              <div className="text-base font-semibold text-orange-600 min-h-[24px]">
                 {parsedMrp > 0 && parsedDiscPerc > 0 && (
                   <>₹{parsedMrp} - {parsedDiscPerc}% = ₹{computedSellingPrice}</>
                 )}
@@ -396,7 +401,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
               <div className="flex items-end gap-2">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-0.5">Qty</label>
+                  <label className="block text-sm text-gray-500 mb-0.5">Qty</label>
                   <div className="flex gap-1">
                     {[1, 2].map(n => (
                       <button
@@ -451,8 +456,8 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         ) : (
           <div className="card mt-3">
             {/* Header: total count */}
-            <div className="flex items-center text-sm font-medium text-gray-500 mb-2">
-              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mr-1.5">
+            <div className="flex items-center text-base font-medium text-gray-500 mb-2">
+              <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mr-1.5">
                 {totalPieces}
               </span>
               items
@@ -464,9 +469,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                 {/* Line 1: number + category + qty ... Hatao */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-xs text-gray-400 font-medium">{idx + 1}.</span>
-                    <span className="text-sm font-bold text-gray-900">{item.category_name}</span>
-                    <span className="text-xs text-gray-500 font-medium">×{item.quantity}</span>
+                    <span className="text-sm text-gray-400 font-medium">{idx + 1}.</span>
+                    <span className="text-base font-bold text-gray-900">{item.category_name}</span>
+                    <span className="text-sm text-gray-500 font-medium">×{item.quantity}</span>
                   </div>
                   <button
                     onClick={() => removeItem(idx)}
@@ -476,8 +481,8 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   </button>
                 </div>
                 {/* Line 2: calculation ... final price */}
-                <div className="flex items-center justify-between mt-1.5 pl-5">
-                  <span className="text-xs text-gray-700">
+                <div className="flex items-center justify-between mt-1.5 pl-6">
+                  <span className="text-sm text-gray-700">
                     {item.discount_percent > 0 ? (
                       item.quantity > 1
                         ? <>₹{item.mrp} - <span className="font-bold">{item.discount_percent}%</span> = ₹{item.price_per_piece} × {item.quantity}</>
@@ -495,7 +500,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                       onChange={e => setEditPriceInput(e.target.value)}
                       onBlur={() => commitPriceEdit(idx)}
                       onKeyDown={e => { if (e.key === 'Enter') commitPriceEdit(idx); }}
-                      className="w-20 text-right text-[15px] font-bold text-gray-900 border border-blue-400 rounded px-1 py-0 bg-blue-50 outline-none"
+                      className="w-20 text-right text-lg font-bold text-gray-900 border border-blue-400 rounded px-1 py-0 bg-blue-50 outline-none"
                       autoFocus
                       min="1"
                       max={String(item.mrp)}
@@ -503,7 +508,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   ) : (
                     <span
                       onClick={() => { setEditingItemIdx(idx); setEditPriceInput(String(item.price_per_piece)); }}
-                      className="text-[15px] font-bold text-gray-900 border-b border-dashed border-gray-400 cursor-pointer"
+                      className="text-lg font-bold text-gray-900 border-b border-dashed border-gray-400 cursor-pointer"
                     >
                       ₹{item.amount.toLocaleString('en-IN')}
                     </span>
@@ -514,16 +519,16 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
             {/* Summary */}
             <div className="pt-2 mt-2 border-t-2 border-gray-200 space-y-0.5">
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-base">
                 <span className="text-gray-500">MRP Total</span>
                 <span className="text-gray-500">₹{mrpTotal.toLocaleString('en-IN')}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-base">
                 <span className="font-bold">Selling Total</span>
                 <span className="font-bold">₹{sellingTotal.toLocaleString('en-IN')}</span>
               </div>
               {itemDiscount > 0 && (
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-base">
                   <span className="text-orange-600 font-semibold">Saved</span>
                   <span className="text-orange-600 font-semibold">
                     ₹{itemDiscount.toLocaleString('en-IN')} ({itemDiscountPercent}% off)
@@ -721,7 +726,12 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
               Total Discount: ₹{totalDiscount.toLocaleString('en-IN')} ({totalDiscountPercent}% off MRP)
             </div>
           )}
-          <div className="text-2xl font-bold">Total: ₹{total.toLocaleString('en-IN')}</div>
+          <div className="text-3xl font-bold">
+            Total: ₹{displayTotal.toLocaleString('en-IN')}
+            {cashRoundOff > 0 && (
+              <span className="text-xs text-gray-400 font-normal ml-2">₹{cashRoundOff} round off</span>
+            )}
+          </div>
         </div>
 
         {/* Payment buttons */}
@@ -835,10 +845,10 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         {/* Submit */}
         <button
           onClick={submitBill}
-          disabled={submitting || total <= 0}
+          disabled={submitting || displayTotal <= 0}
           className="btn-primary w-full text-lg py-4"
         >
-          {submitting ? 'Saving...' : `✓ Bill Save Karo — ₹${total.toLocaleString('en-IN')}`}
+          {submitting ? 'Saving...' : `✓ Bill Save Karo — ₹${displayTotal.toLocaleString('en-IN')}`}
         </button>
       </div>
     </div>

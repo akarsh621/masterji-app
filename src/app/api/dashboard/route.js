@@ -187,29 +187,15 @@ export async function GET(request) {
     const baseConditions = [...dateConditions, 'b.deleted_at IS NULL'];
     const baseParams = [...dateParams];
 
-    const scopedConditions = [...baseConditions];
-    const scopedParams = [...baseParams];
-    if (result.user.role === 'salesman') {
-      scopedConditions.push('b.salesman_id = ?');
-      scopedParams.push(result.user.id);
-    }
-
-    const scopedWhere = scopedConditions.join(' AND ');
     const baseWhere = baseConditions.join(' AND ');
 
-    const summary = runSummaryQuery(db, scopedWhere, scopedParams);
+    const summary = runSummaryQuery(db, baseWhere, baseParams);
 
     const { conditions: prevConditions, params: prevParams } = buildPreviousPeriodConditions(view, from, to);
     const prevBaseConditions = [...prevConditions, 'b.deleted_at IS NULL'];
     const prevBaseParams = [...prevParams];
-    const prevScopedConditions = [...prevBaseConditions];
-    const prevScopedParams = [...prevBaseParams];
-    if (result.user.role === 'salesman') {
-      prevScopedConditions.push('b.salesman_id = ?');
-      prevScopedParams.push(result.user.id);
-    }
-    const prevWhere = prevScopedConditions.join(' AND ');
-    const previous_summary = runSummaryQuery(db, prevWhere, prevScopedParams);
+    const prevWhere = prevBaseConditions.join(' AND ');
+    const previous_summary = runSummaryQuery(db, prevWhere, prevBaseParams);
 
     const categoryBreakdown = db.prepare(`
       SELECT
@@ -220,11 +206,11 @@ export async function GET(request) {
       FROM bill_items bi
       JOIN bills b ON bi.bill_id = b.id
       JOIN categories c ON bi.category_id = c.id
-      WHERE ${scopedWhere}
+      WHERE ${baseWhere}
       GROUP BY c.id
       HAVING revenue > 0
       ORDER BY revenue DESC
-    `).all(...scopedParams);
+    `).all(...baseParams);
 
     const dailyTrend = db.prepare(`
       SELECT
@@ -232,10 +218,10 @@ export async function GET(request) {
         COUNT(*) as bills,
         SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END) as revenue
       FROM bills b
-      WHERE ${scopedWhere}
+      WHERE ${baseWhere}
       GROUP BY date(b.created_at)
       ORDER BY date ASC
-    `).all(...scopedParams);
+    `).all(...baseParams);
 
     let weeklyTrend = [];
     if (view === 'month' || (from && to)) {
@@ -246,10 +232,10 @@ export async function GET(request) {
           COUNT(*) as bills,
           SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END) as revenue
         FROM bills b
-        WHERE ${scopedWhere}
+        WHERE ${baseWhere}
         GROUP BY week_start
         ORDER BY week_start ASC
-      `).all(...scopedParams);
+      `).all(...baseParams);
       weeklyTrend = weekRows;
     }
 
