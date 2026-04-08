@@ -19,8 +19,8 @@ const SALES_TABS = [
 const ADMIN_TABS = [
   { id: 'new-bill', label: 'Naya Bill', icon: '＋' },
   { id: 'dashboard', label: 'Dashboard', icon: '📈' },
-  { id: 'earnings', label: 'Earnings', icon: '💰' },
-  { id: 'hisaab', label: 'Hisaab', icon: '🏦' },
+  { id: 'earnings', label: 'Earnings', icon: '🏦' },
+  { id: 'hisaab', label: 'Hisaab', icon: '💰' },
   { id: 'history', label: 'Bill Book', icon: '📋' },
 ];
 
