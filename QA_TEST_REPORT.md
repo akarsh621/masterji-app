@@ -1,172 +1,211 @@
 # Master Ji Fashion House - QA Test Report
 
-Last updated: 2026-03-21  
-Prepared for: Development handoff (billing-critical validation)
+Last updated: 2026-04-08  
+Mode: End-to-end + finance-integrity-first QA  
+Status: Completed
 
 ---
 
-## Release Readiness Verdict
+## 1) Scope and Environment
 
-**Status: NOT READY FOR SHOP ROLLOUT**
+### Source scope
+- `app/README.md`
+- `app/CHANGELIST.md` (sections 1-22)
 
-Core billing math is mostly stable under normal UI flow, but multiple open issues can still cause serious bookkeeping risk (including a critical return-forgery path that can manipulate drawer balance).
+### Primary release risk focus
+- Billing calculation correctness
+- Bookkeeping/data integrity
+- Legal/tax-impacting accuracy (discounts, totals, payment splits, returns, drawer, exports)
 
----
-
-## Scope Covered in This Pass
-
-- Full review basis: `CHANGELIST.md` (through section 21)
-- Backend API stress tests (auth, bills, returns, dashboard, export, cash drawer)
-- DB-level validation against stored values (`bills`, `bill_items`, `bill_payments`, `app_state`)
-- Frontend/browser validation on `localhost:3000` for salesman + admin flows
-- Edge-case and negative-case probes focused on bill math integrity
-
----
-
-## Environment
-
+### Execution environment
 - App mode: `DB_MODE=dev`
-- DB: fresh seeded `data/masterji_dev.db`
-- Server: Next.js dev server on `http://localhost:3000`
-- Test credentials:
-  - Admin: `admin / admin123`
-  - Salesman: PIN `1111`
+- DB: `data/masterji_dev.db` (fresh-reset before run)
+- App URL: `http://localhost:3000`
+- Roles used: Admin + Salesman
+
+### Run summary
+- API deterministic + negative suite: **52 checks** (`50 pass`, `2 fail`)
+- Fuzz billing suite: **25 scenarios** (`25 pass`, `0 fail`)
+- Reconciliation suite: **18 checks** (`17 pass`, `1 fail`)
+- UI/E2E flows: Salesman + Admin critical journeys executed; key routes validated
+- Post-fix retest suite (after pushed fixes): **14 checks** (`14 pass`, `0 fail`)
+- Post-fix reconciliation retest: **12 checks** (`12 pass`, `0 fail`)
+- Production-mode smoke (`npm run prod`) initial: **Fail** (`/api/dashboard`, `/api/hisaab`, `/api/export` returned `500` on prod DB due missing `b.mrp_total`)
+- Production-mode re-smoke after fix: **Pass** (migration `v5` applied; core admin APIs `200/200/200`)
 
 ---
 
-## Open Findings (with RCA + Fix Direction)
+## 2) QA Test Matrix and Run Summary
 
-## 1) CRITICAL - Salesman can forge return bills via `POST /api/bills`
+## Layer 1 - API + DB invariants (calculation core)
 
-- **Area:** Billing / Returns / Cash drawer integrity
-- **Status:** Open
-- **Impact:** Any authenticated salesman can create arbitrary `type='return'` bills (including cash refunds) without using the protected return route. This can directly reduce drawer and distort revenue/return accounting.
-- **Repro (confirmed):**
-  - `POST /api/bills` as salesman with body containing `type: "return"` succeeded (`201`).
-  - Also succeeded without `original_bill_id` ("phantom return").
-- **RCA:**
-  - `src/app/api/bills/route.js` allows `billType` from request body (`requireAuth` only).
-  - No role gate for return creation in this route.
-  - No mandatory linkage validation to original sale bill.
-- **Fix direction:**
-  - In `POST /api/bills`, force `type='sale'` only; reject any client-provided `type`/`original_bill_id`.
-  - Keep returns exclusively in `POST /api/bills/:id/return`.
-  - Add server-side assertion: return creation requires valid original sale bill and authorized role.
-- **Retest criteria:**
-  - Salesman `POST /api/bills` with `type='return'` => `400/403`.
-  - Phantom return (missing `original_bill_id`) => rejected.
+| ID | Area | Priority | Invariant to prove | Status |
+|----|------|----------|--------------------|--------|
+| A1 | Create bill math | P0 | `total = subtotal - discount_amount`, all rounded consistently | Pass |
+| A2 | Item math constraints | P0 | `mrp > 0`, `qty > 0`, amount relationship valid | Pass |
+| A3 | Payment integrity | P0 | Sum of `bill_payments` equals bill total | Pass |
+| A4 | Mixed mode semantics | P0 | `mixed` only as bill-level derived mode, not payment row mode | Pass |
+| A5 | Cash rounding | P0 | Cash-only round-down behavior is consistent and recorded correctly | Partial (UI sample pass; deeper round-boundary matrix still recommended) |
+| A6 | Return integrity | P0 | Return linkage/authorization/amount controls and refund-side accounting | **Pass (Retest closed)** |
+| A7 | Void integrity | P0 | Void reverses all financial side effects exactly once | Pass |
+| A8 | Cash drawer mutation | P0 | Sale/return/cash-out/sweep/manual events reconcile to drawer | Pass |
+| A9 | Dashboard aggregates | P0 | Net/gross/returns/discount/mrp/payment totals match DB truth | **Pass (prod re-smoke closed)** |
+| A10 | Export aggregates | P1 | CSV financial values match API + DB for same date range | **Pass (prod re-smoke closed)** |
+| A11 | Negative payload hardening | P0 | Malformed/forged/mismatched payloads rejected with clear errors | Partial (strict calendar checks fixed for dashboard/export; bills list still regex-only) |
+| A12 | Fuzz stability | P1 | Randomized valid payloads keep all invariants intact | Pass |
 
----
+## Layer 2 - End-to-end functional journeys
 
-## 2) HIGH - Salesman return workflow broken (UI allows action, API denies)
+| ID | Journey | Priority | Expected outcome | Status |
+|----|---------|----------|------------------|--------|
+| E1 | Salesman login -> category-first bill -> save | P0 | Correct bill persisted and shown in UI summaries | Pass |
+| E2 | Salesman split payment + bill-level discount | P0 | UI/DB/API totals align, no hidden mismatch | Pass |
+| E3 | Admin login -> dashboard -> custom range -> export | P0 | Range filters and exported data parity | **Pass (prod re-smoke closed)** |
+| E4 | Admin return/exchange flow | P0 | Valid return bill, correct net and drawer impact | **Pass (Retest closed)** |
+| E5 | Admin void + recreate flow | P0 | Void accounting reversal and clean prefill recreation | Partial (void verified, recreate UI path not fully exercised) |
+| E6 | Hisaab correct + sweep + cash-out chain | P0 | Drawer transitions are exact and explainable | **Pass (prod re-smoke closed)** |
+| E7 | Earnings add/edit/delete/copy expenses | P1 | Monthly P&L and deltas remain correct | Pass |
+| E8 | On-bill salesman selector | P1 | Bill is assigned to selected salesman correctly | Pass |
+| E9 | Print queue trigger paths | P2 | Queue API path and UI behavior non-breaking | Pass |
 
-- **Area:** Frontend + API contract mismatch
-- **Status:** Open
-- **Impact:** Salesman sees return action in history, but submit fails with auth error. Operational confusion during real counter usage.
-- **Repro (confirmed):**
-  - Salesman call to `POST /api/bills/:id/return` returns `403` (`"Sirf admin access kar sakta hai"`).
-- **RCA:**
-  - `src/components/SalesHistory.js` exposes return action to salesmen.
-  - `src/app/api/bills/[id]/return/route.js` uses `requireAdmin`.
-- **Fix direction (choose one):**
-  - Option A: Allow salesman in return route with strict constraints.
-  - Option B: Hide/disable return UI for salesmen.
-- **Retest criteria:**
-  - UI visibility and API authorization behavior must match exactly.
+## Layer 3 - UI stability and non-break checks
 
----
+| ID | Screen | Priority | UI behavior to verify | Status |
+|----|--------|----------|-----------------------|--------|
+| U1 | NewBill | P0 | Category-first UX, no wrong-category accidental add path | Pass |
+| U2 | Payment | P0 | Final price/%/split/rounding widgets stay stable and intuitive | Partial (works; click interception seen at viewport edges) |
+| U3 | Bill Book | P0 | Filters, row expand, return/void/delete controls behave reliably | Partial (filter parity fixed; tap interception observed) |
+| U4 | Dashboard | P1 | Tabs, trend toggles, loading states, custom dates work cleanly | Pass |
+| U5 | Hisaab | P1 | Hero card, correct/edit/sweep forms and refresh states are stable | Pass |
+| U6 | Earnings | P1 | Expense forms/list/edit/delete/copy interactions are not broken | Partial (core works; some clickable rows intercepted in viewport) |
+| U7 | Settings | P1 | Core user/category/admin edit flows remain usable | Pass |
+| U8 | Mobile-style interaction | P0 | No blocking overlap/intercept/focus/keyboard regressions | **Fail (Medium)** |
+| U9 | Error visibility | P0 | Rejected API actions are surfaced, not silently swallowed | Pass for tested paths |
 
-## 3) HIGH - "Mixed" payment filter broken in history
+## Layer 4 - Cross-system reconciliation
 
-- **Area:** Sales history filtering
-- **Status:** Open
-- **Impact:** Users selecting Mixed filter get backend `400`; UI silently keeps stale list, giving false confidence in filtered data.
-- **Repro (confirmed):**
-  - API call `GET /api/bills?...&payment_mode=mixed` returned `400` (`Payment mode galat hai`).
-  - Browser network confirms `statusCode: 400` on Mixed filter search.
-- **RCA:**
-  - `VALID_PAYMENT_MODES` was narrowed to `cash/upi/card` for payment entry validation.
-  - Same set is also reused in `GET /api/bills` filter validation, accidentally rejecting bill-level `mixed`.
-- **Fix direction:**
-  - Separate constants:
-    - `VALID_PAYMENT_ENTRY_MODES = {cash, upi, card}`
-    - `VALID_BILL_FILTER_MODES = {cash, upi, card, mixed}`
-  - Surface filter API error in UI instead of silent catch.
-- **Retest criteria:**
-  - Mixed filter returns only mixed bills in both admin and salesman history.
+| ID | Reconciliation | Priority | Expected result | Status |
+|----|----------------|----------|-----------------|--------|
+| R1 | Dashboard vs direct SQL | P0 | Summary values match same-period DB truth | **Pass (prod re-smoke closed)** |
+| R2 | Aaj summary vs direct SQL | P0 | Salesman-facing totals match DB truth | Pass (shares validated dashboard source) |
+| R3 | Hisaab vs app_state + flows | P0 | Drawer and flow breakdown are explainable and exact | **Pass (prod re-smoke closed)** |
+| R4 | CSV vs API/DB | P1 | Export is financially and structurally consistent | **Pass (prod re-smoke closed)** |
 
 ---
 
-## 4) HIGH - Dashboard discount % denominator includes return subtotals
+## 3) Calculation Reconciliation Table (Expected vs Actual)
 
-- **Area:** Analytics accuracy (tax/reconciliation visibility)
-- **Status:** Open
-- **Impact:** `Total Discount (MRP se)` percentage can be understated when return bills exist.
-- **Repro (confirmed):**
-  - Dashboard summary `total_mrp` was higher than sales-only MRP by exactly return subtotal.
-  - Example observed difference: `+800` (matching one return bill subtotal).
-- **RCA:**
-  - In `src/app/api/dashboard/route.js`, `total_mrp` uses:
-    - `CASE WHEN b.type = 'sale' AND b.mrp_total > 0 THEN b.mrp_total ELSE b.subtotal END`
-  - For returns, ELSE branch injects return `subtotal` into `total_mrp`.
-- **Fix direction:**
-  - Restrict denominator to sale bills only:
-    - `SUM(CASE WHEN b.type='sale' THEN COALESCE(NULLIF(b.mrp_total,0), b.subtotal) ELSE 0 END)`
-- **Retest criteria:**
-  - Admin dashboard discount % must match DB-computed `(sum(sale_mrp_total-total)/sum(sale_mrp_total))`.
+| Case | Expected (DB Truth) | Actual (API/UI) | Result |
+|------|----------------------|-----------------|--------|
+| Dashboard `net_revenue` (post-fix retest) | `1080` | `1080` | Pass |
+| Dashboard `total_discount` (true MRP gap) | `520` | `520` | Pass |
+| Dashboard/Hisaab payment split (`cash/upi/card`) | `0 / 1080 / 0` | `0 / 1080 / 0` | Pass |
+| Hisaab `cash_drawer` | `0` | `0` | Pass |
+| Hisaab `sales.total_discount` | `520` | `520` | Pass |
+| CSV row count (today range) | `4` | `4` | Pass |
+| CSV rounded total sum | `2680` | `2680` | Pass |
+| Invalid date guard - dashboard (`2026-13-01`) | `400` | `400` | Pass |
+| Invalid date guard - export (`2026-15-01`) | `400` | `400` | Pass |
+| Prod smoke core admin APIs (`dashboard/hisaab/export`) | `200/200/200` | `200/200/200` | Pass |
 
 ---
 
-## 5) HIGH - Backend accepts item `amount` greater than `mrp * quantity`
+## 4) Findings (Severity Ordered)
 
-- **Area:** Billing input validation
-- **Status:** Open
-- **Impact:** Inflated selling amount can be persisted, producing logically invalid "negative discount" cases and potential accidental overbilling if frontend regresses.
-- **Repro (confirmed):**
-  - `POST /api/bills` with `mrp=100, quantity=1, amount=200` succeeded (`201`).
-- **RCA:**
-  - `src/app/api/bills/route.js` validates only positive finite numbers, not pricing relationship.
-- **Fix direction:**
-  - Enforce when `mrp` is present:
-    - `amount <= mrp * quantity` (+ small rounding tolerance)
-  - Return clear validation error on violation.
-- **Retest criteria:**
-  - Above payload must return `400`.
+### Critical
+- None open in post-fix retest + prod re-smoke.
+
+### High
+- None open in post-fix retest.
+
+### Medium
+- F-005: Repeated click/tap interception in mobile-style viewport on critical actions (carry-forward observation; non-blocking to finance integrity).
+
+### Low
+- None in this pass.
 
 ---
 
-## Calculation Validation - What Passed
+## 5) Detailed Findings (RCA + Repro + Fix + Retest)
 
-- Deterministic scenario checks passed:
-  - Correct persistence for `subtotal`, `mrp_total`, `discount_amount`, `total`
-  - Percent fallback works: `discount_percent` without `discount_amount` derived correctly
-  - Split payment sums enforced against total
-  - Cash drawer updates and void reversals were mathematically correct (`+333` then `-333` exact)
-- Fuzz tests passed:
-  - 30 randomized bill payloads validated against DB invariants with **0 failures**
-- UI calculation display checks passed:
-  - MRP + discount live formula visible
-  - Final price mode updates payable amount exactly
-  - Split preview math (`primary + split = total`) displayed correctly
-  - Today summary discount percent no longer shows `NaN`
+### F-001 - Duplicate returns allowed for same source quantity
+- **Severity:** Critical
+- **Area:** Returns API, financial integrity
+- **Impact:** Same sold item can be returned multiple times, leading to over-refunds, negative revenue distortion, and drawer corruption.
+- **Repro:** `POST /api/bills/:id/return` for same bill + item + qty succeeds repeatedly (`201`, two return bill IDs created).
+- **Evidence:** QA API run created `ret1` and `retAgain` successfully for same original quantity.
+- **RCA:** Route validates requested qty against original line qty per request only; it does not subtract previously returned quantity for that original bill.
+- **Fix direction:** Enforce cumulative return caps per original bill line (`already_returned_qty + requested_qty <= sold_qty`) and block when exceeded.
+- **Retest criteria:** Second return attempt for fully returned line must return `400`.
+- **Retest result (post-fix):** **Closed**. Duplicate return attempt now returns `400`.
+
+### F-002 - Inflated return amount accepted
+- **Severity:** Critical
+- **Area:** Returns API, calculation integrity
+- **Impact:** Operator can submit refund amount much higher than sold value, causing direct financial loss and accounting fraud risk.
+- **Repro:** Return request with line `amount=9999` for originally sold lower-value item succeeded (`201`).
+- **Evidence:** QA API run `retInflated` accepted with `refund_amount: 9999`.
+- **RCA:** Route checks only positive finite amount; no amount-to-original line validation.
+- **Fix direction:** Enforce line amount cap based on original sold unit amount and returned quantity (with small rounding tolerance).
+- **Retest criteria:** Any return line amount above original proportional sold value must return `400`.
+- **Retest result (post-fix):** **Closed**. Inflated amount return attempt now returns `400`.
+
+### F-003 - Hisaab discount does not match true discount model
+- **Severity:** High
+- **Area:** `GET /api/hisaab`, reporting consistency
+- **Impact:** Operational discount shown in Hisaab understates true discount and can mislead bookkeeping and tax review.
+- **Repro:** Reconciliation run: Hisaab `sales.total_discount=24898.42` vs dashboard/DB true discount `91625.42`.
+- **RCA:** Hisaab query sums only `b.discount_amount`, while dashboard uses true discount expression derived from `mrp_total - total` for sale bills.
+- **Fix direction:** Use same discount expression in Hisaab as dashboard for sale rows.
+- **Retest criteria:** Hisaab discount must equal dashboard and direct SQL truth for identical date range.
+- **Retest result (post-fix):** **Closed**. `hisaab.sales.total_discount` now matches dashboard and DB truth.
+
+### F-004 - Date format validation accepts invalid calendar dates
+- **Severity:** High
+- **Area:** Date-filtered APIs (`dashboard`, `export`, also similar pattern in list endpoints)
+- **Impact:** Invalid user input can silently pass and produce confusing or incorrect reports.
+- **Repro:** `GET /api/dashboard?from=2026-13-01` and `GET /api/export?from=2026-15-01` returned `200` instead of validation error.
+- **RCA:** Regex validates string shape only (`YYYY-MM-DD`), not real calendar validity.
+- **Fix direction:** Parse and validate dates with strict calendar semantics before query execution.
+- **Retest criteria:** Impossible dates must return `400` with clear error.
+- **Retest result (post-fix):** **Closed** for dashboard/export. Invalid month requests now return `400`.
+
+### F-005 - Click interception in mobile-style viewport on critical actions
+- **Severity:** Medium
+- **Area:** UI interaction layer (`Payment`, `Bill Book`, `Earnings`)
+- **Impact:** Users may struggle to trigger key actions reliably on some viewport/layout combinations.
+- **Repro:** Multiple actions required edge-offset clicks due intercepted targets during QA runs.
+- **RCA:** Layering/overlap of non-interactive elements with actionable controls in specific viewport positions.
+- **Fix direction:** Audit `z-index`, `pointer-events`, sticky/footer overlap, and spacing around action areas.
+- **Retest criteria:** All critical buttons should click reliably at center tap position without offset workarounds.
+- **Retest result (post-fix):** Not part of current API-focused fix push; keep as non-blocking UI observation.
+
+### F-006 - Production smoke failure due DB schema drift
+- **Severity:** Critical
+- **Area:** Production-mode runtime (`DB_MODE=prod`) schema compatibility
+- **Impact:** Core admin reporting endpoints fail in production mode (`/api/dashboard`, `/api/hisaab`, `/api/export`), blocking day-close visibility and exports.
+- **Repro:** Start with `npm run prod`; login succeeds; calling those endpoints returns `500`.
+- **Evidence:** Server logs show `SqliteError: no such column: b.mrp_total` while preparing those queries.
+- **RCA:** Production DB schema is older and does not include `bills.mrp_total`; current migrations do not add this column for legacy prod DBs.
+- **Fix direction:** Add forward-safe migration that adds `mrp_total REAL DEFAULT 0` to `bills` when absent, plus optional backfill where possible.
+- **Retest criteria:** Under `npm run prod`, dashboard/hisaab/export all return `200` and reconcile with DB truth.
+- **Retest result (post-fix):** **Closed**. Startup logs show migration `v5` applied, and re-smoke confirms `dashboard/hisaab/export` all return `200`.
 
 ---
 
-## Immediate Dev Priorities (Order)
+## 6) Go/No-Go Verdict
 
-1. Block forged/phantom returns in `POST /api/bills` (Critical)
-2. Align salesman return UX and authorization
-3. Fix mixed history filter backend validation + UI error handling
-4. Correct dashboard `total_mrp` denominator logic
-5. Add amount-vs-MRP relationship validation
+- **Release readiness:** **GO**
+- **Blocking risks:** No open Critical/High findings after prod re-smoke.
+- **Recommendation:** Proceed to rollout candidate; keep medium UI tap-interception as follow-up hardening.
 
 ---
 
-## Retest Plan After Fixes
+## 7) Next Actions for Development
 
-- Re-run full billing API matrix (sale, split, final discount, percent discount, returns, voids)
-- Re-run role matrix (admin vs salesman) for return/cancel actions
-- Re-run history filters (`cash`, `upi`, `card`, `mixed`)
-- Re-check dashboard discount percentage against direct DB truth query
-- Re-run fuzz (>=30 random payloads) and confirm zero invariant breaks
+- Keep automated regression tests for returns (duplicate qty + amount cap) in CI.
+- Extend strict `isValidDate` utility usage to endpoints still using regex-only checks (for consistency).
+- Verify migration `v5` rollout across all deployed databases/environments.
+- Resolve viewport click/tap interception in payment/history/earnings and run focused mobile viewport UX pass.
+- Keep production smoke checklist in pre-release gate (`dashboard`, `hisaab`, `export`, auth, filters).
 

@@ -37,6 +37,15 @@ export async function POST(request, { params }) {
 
     const originalItems = db.prepare('SELECT * FROM bill_items WHERE bill_id = ?').all(id);
 
+    const alreadyReturnedRows = db.prepare(`
+      SELECT bi.category_id, SUM(bi.quantity) as returned_qty
+      FROM bill_items bi
+      JOIN bills b ON bi.bill_id = b.id
+      WHERE b.original_bill_id = ? AND b.deleted_at IS NULL AND b.type = 'return'
+      GROUP BY bi.category_id
+    `).all(id);
+    const returnedMap = new Map(alreadyReturnedRows.map(r => [r.category_id, r.returned_qty]));
+
     const normalizedItems = [];
     for (const [index, item] of items.entries()) {
       const categoryId = Number(item?.category_id);
@@ -57,8 +66,14 @@ export async function POST(request, { params }) {
       if (!origItem) {
         return NextResponse.json({ error: `Return item ${index + 1}: ye item original bill mein nahi hai` }, { status: 400 });
       }
-      if (quantity > origItem.quantity) {
-        return NextResponse.json({ error: `Return item ${index + 1}: quantity original se zyada hai` }, { status: 400 });
+      const alreadyReturned = returnedMap.get(categoryId) || 0;
+      if (quantity + alreadyReturned > origItem.quantity) {
+        return NextResponse.json({ error: `Return item ${index + 1}: quantity already returned + requested original se zyada hai` }, { status: 400 });
+      }
+
+      const maxAmount = round2(origItem.amount * (quantity / origItem.quantity));
+      if (amount > maxAmount + 1) {
+        return NextResponse.json({ error: `Return item ${index + 1}: amount original value se zyada hai (max ₹${maxAmount})` }, { status: 400 });
       }
 
       normalizedItems.push({ category_id: categoryId, quantity, amount: round2(amount) });

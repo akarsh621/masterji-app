@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireAdmin } from '@/lib/auth';
+import { isValidDate } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
-
-const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function csvEscape(value) {
   const str = value == null ? '' : String(value);
@@ -22,10 +21,10 @@ export async function GET(request) {
     const from = searchParams.get('from');
     const to = searchParams.get('to');
 
-    if (from && !DATE_ONLY_REGEX.test(from)) {
+    if (from && !isValidDate(from)) {
       return NextResponse.json({ error: 'From date format galat hai (YYYY-MM-DD)' }, { status: 400 });
     }
-    if (to && !DATE_ONLY_REGEX.test(to)) {
+    if (to && !isValidDate(to)) {
       return NextResponse.json({ error: 'To date format galat hai (YYYY-MM-DD)' }, { status: 400 });
     }
     if (from && to && from > to) {

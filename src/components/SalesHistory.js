@@ -282,14 +282,14 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                               }
                             }}
                             disabled={printStatuses[bill.id] === 'sending'}
-                            className="text-xs font-medium text-blue-700 border border-blue-300 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
+                            className="text-xs font-medium text-blue-700 border border-blue-300 bg-blue-50 px-3 py-2 min-h-[44px] rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
                           >
                             {printStatuses[bill.id] === 'queued' ? '✅ Bhej Diya' : printStatuses[bill.id] === 'failed' ? '❌ Retry' : '🖨 Print Bill'}
                           </button>
                         {!isReturn && (
                           <button
                             onClick={() => startReturn(bill)}
-                            className="text-xs font-medium text-orange-700 border border-orange-300 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 active:bg-orange-200 transition-colors"
+                            className="text-xs font-medium text-orange-700 border border-orange-300 bg-orange-50 px-3 py-2 min-h-[44px] rounded-lg hover:bg-orange-100 active:bg-orange-200 transition-colors"
                           >
                             Return / Exchange
                           </button>
@@ -303,11 +303,11 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         </button>
                       </div>
                       {(user.role === 'admin' || canSalesmanVoid) && (
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs text-red-500">Galat hai?</span>
                           <button
                             onClick={() => handleDelete(bill)}
-                            className="bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors"
+                            className="bg-red-600 text-white text-xs font-medium px-3 py-2 min-h-[44px] rounded-lg hover:bg-red-700 transition-colors"
                           >
                             Delete karo
                           </button>

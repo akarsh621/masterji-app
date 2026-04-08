@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS print_queue (
     printed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
 );
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL CHECK(category IN ('stock_purchase','salaries','shop_utilities','other')),
+    amount REAL NOT NULL CHECK(amount > 0),
+    label TEXT, note TEXT,
+    expense_month TEXT NOT NULL, expense_date TEXT,
+    recorded_by INTEGER NOT NULL REFERENCES users(id),
+    created_at DATETIME DEFAULT (datetime('now','+5 hours','+30 minutes'))
+);
+CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(expense_month);
+CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
 CREATE INDEX IF NOT EXISTS idx_print_queue_status ON print_queue(status);
 CREATE INDEX IF NOT EXISTS idx_print_queue_bill_id ON print_queue(bill_id);
 CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
@@ -131,6 +142,28 @@ const MIGRATIONS = [
   // v3: Add cost_price to bill_items
   (db) => {
     try { db.exec("ALTER TABLE bill_items ADD COLUMN cost_price REAL DEFAULT NULL CHECK(cost_price >= 0)"); } catch {}
+  },
+  // v4: Add expenses table
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL CHECK(category IN ('stock_purchase','salaries','shop_utilities','other')),
+      amount REAL NOT NULL CHECK(amount > 0),
+      label TEXT, note TEXT,
+      expense_month TEXT NOT NULL, expense_date TEXT,
+      recorded_by INTEGER NOT NULL REFERENCES users(id),
+      created_at DATETIME DEFAULT (datetime('now','+5 hours','+30 minutes'))
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(expense_month)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)");
+  },
+  // v5: Add mrp_total to bills and mrp to bill_items (missing on legacy prod DBs)
+  (db) => {
+    try { db.exec("ALTER TABLE bills ADD COLUMN mrp_total REAL DEFAULT 0"); } catch {}
+    try { db.exec("ALTER TABLE bill_items ADD COLUMN mrp REAL CHECK(mrp > 0)"); } catch {}
+    db.exec(`UPDATE bills SET mrp_total = (
+      SELECT COALESCE(SUM(bi.mrp * bi.quantity), 0) FROM bill_items bi WHERE bi.bill_id = bills.id AND bi.mrp IS NOT NULL
+    ) WHERE mrp_total = 0 OR mrp_total IS NULL`);
   },
 ];
 

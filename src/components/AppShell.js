@@ -8,6 +8,7 @@ import Dashboard from '@/components/Dashboard';
 import SalesHistory from '@/components/SalesHistory';
 import DayClose from '@/components/DayClose';
 import Settings from '@/components/Settings';
+import Earnings from '@/components/Earnings';
 
 const SALES_TABS = [
   { id: 'new-bill', label: 'Naya Bill', icon: '＋' },
@@ -18,9 +19,9 @@ const SALES_TABS = [
 const ADMIN_TABS = [
   { id: 'new-bill', label: 'Naya Bill', icon: '＋' },
   { id: 'dashboard', label: 'Dashboard', icon: '📈' },
-  { id: 'hisaab', label: 'Hisaab', icon: '💰' },
+  { id: 'earnings', label: 'Earnings', icon: '💰' },
+  { id: 'hisaab', label: 'Hisaab', icon: '🏦' },
   { id: 'history', label: 'Bill Book', icon: '📋' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
 export default function AppShell() {
@@ -44,6 +45,7 @@ export default function AppShell() {
       case 'new-bill': return <NewBill prefillData={prefillData} onPrefillConsumed={handlePrefillConsumed} />;
       case 'today': return <TodaySummary />;
       case 'dashboard': return <Dashboard />;
+      case 'earnings': return <Earnings />;
       case 'hisaab': return <DayClose />;
       case 'history': return <SalesHistory onVoidAndRecreate={handleVoidAndRecreate} />;
       case 'settings': return <Settings />;
@@ -52,7 +54,7 @@ export default function AppShell() {
   };
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-24">
       {dbMode === 'dev' && (
         <div className="bg-amber-400 text-amber-900 text-center text-xs font-bold py-1 tracking-wider">
           DEV MODE — testing data, prod safe hai
@@ -63,9 +65,18 @@ export default function AppShell() {
           <h1 className="text-lg font-bold text-blue-700">{user.name}</h1>
           <p className="text-xs text-gray-400">{isAdmin ? 'Admin' : 'Sales'} · Master Ji Fashion House</p>
         </div>
-        <button onClick={logout} className="text-sm text-gray-500 hover:text-red-600">
-          Logout
-        </button>
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`text-xl ${activeTab === 'settings' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+              title="Settings"
+            >⚙</button>
+          )}
+          <button onClick={logout} className="text-sm text-gray-500 hover:text-red-600">
+            Logout
+          </button>
+        </div>
       </header>
 
       <main className="p-4 max-w-2xl mx-auto">

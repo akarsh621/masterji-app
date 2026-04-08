@@ -83,6 +83,21 @@ CREATE TABLE IF NOT EXISTS print_queue (
 CREATE INDEX IF NOT EXISTS idx_print_queue_status ON print_queue(status);
 CREATE INDEX IF NOT EXISTS idx_print_queue_bill_id ON print_queue(bill_id);
 
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL CHECK(category IN ('stock_purchase', 'salaries', 'shop_utilities', 'other')),
+    amount REAL NOT NULL CHECK(amount > 0),
+    label TEXT,
+    note TEXT,
+    expense_month TEXT NOT NULL,
+    expense_date TEXT,
+    recorded_by INTEGER NOT NULL REFERENCES users(id),
+    created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(expense_month);
+CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
+
 CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
 CREATE INDEX IF NOT EXISTS idx_bills_salesman_id ON bills(salesman_id);
 CREATE INDEX IF NOT EXISTS idx_bills_payment_mode ON bills(payment_mode);

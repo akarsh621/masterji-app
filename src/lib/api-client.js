@@ -72,6 +72,15 @@ export const api = {
 
   queuePrint: (billId) => apiRequest('/print-queue', { method: 'POST', body: JSON.stringify({ bill_id: billId }) }),
 
+  getExpenses: (month) => apiRequest(`/expenses?month=${month}`),
+  createExpense: (body) => apiRequest('/expenses', { method: 'POST', body: JSON.stringify(body) }),
+  updateExpense: (id, body) => apiRequest(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteExpense: (id) => apiRequest(`/expenses/${id}`, { method: 'DELETE' }),
+  copyExpenses: (body) => apiRequest('/expenses/copy', { method: 'POST', body: JSON.stringify(body) }),
+  getExpenseLabels: (category) => apiRequest(`/expenses/labels?category=${category}`),
+
+  getEarnings: (month) => apiRequest(`/earnings?month=${month}`),
+
   exportCSV: (params) => {
     const token = getToken();
     const qs = new URLSearchParams(params).toString();

@@ -20,7 +20,9 @@ export async function GET(request) {
         COALESCE(SUM(CASE WHEN b.type = 'sale' THEN 1 ELSE 0 END), 0) as sale_count,
         COALESCE(SUM(CASE WHEN b.type = 'return' THEN 1 ELSE 0 END), 0) as return_count,
         COALESCE(SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END), 0) as net_revenue,
-        COALESCE(SUM(b.discount_amount), 0) as total_discount
+        COALESCE(SUM(CASE WHEN b.type = 'sale' THEN
+          CASE WHEN b.mrp_total > 0 THEN (b.mrp_total - b.total) ELSE b.discount_amount END
+        ELSE 0 END), 0) as total_discount
       FROM bills b
       WHERE b.deleted_at IS NULL AND ${dateWhere}
     `).get();
