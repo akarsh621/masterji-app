@@ -121,14 +121,23 @@ export default function SalesHistory({ onVoidAndRecreate }) {
         const shouldRecreate = confirm('Iske badle naya bill banao?');
         if (shouldRecreate) {
           onVoidAndRecreate({
-            items: bill.items.map(i => ({
-              category_id: i.category_id,
-              category_name: i.category_name,
-              group_name: i.group_name,
-              quantity: i.quantity,
-              amount: i.amount,
-              price_per_piece: i.amount / i.quantity,
-            })),
+            items: bill.items.map(i => {
+              const pricePerPiece = i.quantity > 0 ? i.amount / i.quantity : 0;
+              const mrp = i.mrp && i.mrp > 0 ? i.mrp : pricePerPiece;
+              const discountPercent = mrp > 0 && pricePerPiece > 0
+                ? Math.round((1 - pricePerPiece / mrp) * 100)
+                : 0;
+              return {
+                category_id: i.category_id,
+                category_name: i.category_name,
+                group_name: i.group_name,
+                mrp,
+                discount_percent: discountPercent,
+                price_per_piece: pricePerPiece,
+                quantity: i.quantity,
+                amount: i.amount,
+              };
+            }),
             payments: bill.payments || [],
             notes: bill.notes || '',
           });
