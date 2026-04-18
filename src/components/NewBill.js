@@ -33,6 +33,36 @@ const PAYMENT_MODES = [
   { id: 'card', label: '💳 Card', color: 'bg-teal-600' },
 ];
 
+const BACKDATE_MAX_DAYS = 30;
+
+function todayISTYmd() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const d = parts.find(p => p.type === 'day')?.value;
+  return `${y}-${m}-${d}`;
+}
+
+function ymdOffsetDays(baseYmd, deltaDays) {
+  const base = new Date(baseYmd + 'T00:00:00Z');
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  const y = base.getUTCFullYear();
+  const m = String(base.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(base.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatBackdateLabel(ymd) {
+  if (!ymd) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${d} ${monthNames[dt.getUTCMonth()]} ${y}`;
+}
+
 export default function NewBill({ prefillData, onPrefillConsumed }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -53,6 +83,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
   const [screen, setScreen] = useState('items');
   const [saleByOpen, setSaleByOpen] = useState(false);
+
+  const [backdateOpen, setBackdateOpen] = useState(false);
+  const [backdateValue, setBackdateValue] = useState('');
 
   const [primaryMode, setPrimaryMode] = useState('upi');
   const [splitEnabled, setSplitEnabled] = useState(false);
@@ -219,6 +252,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
       }
+      if (backdateValue && backdateValue !== todayISTYmd()) {
+        billPayload.bill_date = backdateValue;
+      }
       const result = await api.createBill(billPayload);
       setSuccess(result);
       setItems([]);
@@ -229,6 +265,8 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       setPrimaryMode('upi');
       setSplitEnabled(false);
       setSplitAmount('');
+      setBackdateValue('');
+      setBackdateOpen(false);
       setScreen('items');
     } catch (err) {
       setError(err.message);
@@ -261,6 +299,11 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         <div className="text-5xl mb-4">✓</div>
         <h2 className="text-xl font-bold text-green-700 mb-2">Bill Ban Gaya!</h2>
         <p className="text-gray-600 mb-1">{success.bill_number}</p>
+        {success.is_backdated && success.bill_date && (
+          <div className="mb-2 inline-block px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 text-xs font-semibold">
+            Backdated: {formatBackdateLabel(success.bill_date)}
+          </div>
+        )}
         <p className="text-2xl font-bold text-gray-900 mb-4">₹{success.total}</p>
 
         {printStatus === 'queued' && (
@@ -621,6 +664,47 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                     {s.name}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Backdated entry (admin only) */}
+      {isAdmin && (
+        <div className="mb-3">
+          {!backdateOpen && !backdateValue ? (
+            <button
+              onClick={() => setBackdateOpen(true)}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <span className="text-gray-400">Date:</span>
+              <span className="font-medium">Aaj</span>
+              <span className="text-xs text-blue-500">✎</span>
+            </button>
+          ) : (
+            <div className="p-2.5 bg-gray-50 rounded-lg">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Bill Date</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  type="date"
+                  value={backdateValue || todayISTYmd()}
+                  min={ymdOffsetDays(todayISTYmd(), -BACKDATE_MAX_DAYS)}
+                  max={todayISTYmd()}
+                  onChange={(e) => setBackdateValue(e.target.value)}
+                  className="input text-sm"
+                />
+                {backdateValue && backdateValue !== todayISTYmd() && (
+                  <span className="px-2 py-1 rounded-md bg-amber-100 text-amber-800 text-xs font-semibold">
+                    Backdated: {formatBackdateLabel(backdateValue)}
+                  </span>
+                )}
+                <button
+                  onClick={() => { setBackdateValue(''); setBackdateOpen(false); }}
+                  className="text-red-500 hover:text-red-700 text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100"
+                >
+                  Hatao
+                </button>
               </div>
             </div>
           )}

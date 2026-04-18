@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getDb, generateBillNumber, updateCashDrawer } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { isValidDate } from '@/lib/date-utils';
 
 const VALID_PAYMENT_MODES = new Set(['cash', 'upi', 'card']);
 const VALID_FILTER_MODES = new Set(['cash', 'upi', 'card', 'mixed']);
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const BACKDATE_MAX_DAYS = 30;
 
 function round2(value) {
   return Math.round(value * 100) / 100;
@@ -12,6 +14,23 @@ function round2(value) {
 
 function isDateOnly(value) {
   return DATE_ONLY_REGEX.test(value);
+}
+
+function todayIST() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+}
+
+function daysBetweenYMD(earlier, later) {
+  const a = new Date(earlier + 'T00:00:00Z').getTime();
+  const b = new Date(later + 'T00:00:00Z').getTime();
+  return Math.round((b - a) / 86400000);
 }
 
 export async function POST(request) {
@@ -27,9 +46,34 @@ export async function POST(request) {
     const discount_percent = Number(body?.discount_percent ?? 0);
     const discount_amount_input = Number(body?.discount_amount ?? 0);
     const mrp_total_input = Number(body?.mrp_total ?? 0);
-    const notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
+    let notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
     const billType = 'sale';
     const originalBillId = null;
+
+    const billDateInput = typeof body?.bill_date === 'string' ? body.bill_date.trim() : '';
+    const today = todayIST();
+    let isBackdated = false;
+    let backdatedCreatedAt = null;
+    if (billDateInput) {
+      if (result.user.role !== 'admin') {
+        return NextResponse.json({ error: 'Sirf admin backdated bill bana sakta hai' }, { status: 403 });
+      }
+      if (!isValidDate(billDateInput)) {
+        return NextResponse.json({ error: 'Bill date format galat hai (YYYY-MM-DD)' }, { status: 400 });
+      }
+      if (billDateInput > today) {
+        return NextResponse.json({ error: 'Bill date future mein nahi ho sakti' }, { status: 400 });
+      }
+      const daysOld = daysBetweenYMD(billDateInput, today);
+      if (daysOld > BACKDATE_MAX_DAYS) {
+        return NextResponse.json({ error: `Backdate ${BACKDATE_MAX_DAYS} din se purana nahi ho sakta` }, { status: 400 });
+      }
+      if (billDateInput !== today) {
+        isBackdated = true;
+        backdatedCreatedAt = `${billDateInput} 12:00:00`;
+        notes = notes ? `[Backdated] ${notes}` : '[Backdated]';
+      }
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'Kam se kam ek item daalo' }, { status: 400 });
@@ -134,6 +178,11 @@ export async function POST(request) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const insertBillBackdated = db.prepare(`
+      INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode, salesman_id, notes, type, original_bill_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
     const insertItem = db.prepare(`
       INSERT INTO bill_items (bill_id, category_id, mrp, quantity, amount)
       VALUES (?, ?, ?, ?, ?)
@@ -145,9 +194,16 @@ export async function POST(request) {
     `);
 
     const createBill = db.transaction((billNumber) => {
-      const billResult = insertBill.run(
-        billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode, effectiveSalesmanId, notes, billType, originalBillId
-      );
+      let billResult;
+      if (isBackdated) {
+        billResult = insertBillBackdated.run(
+          billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode, effectiveSalesmanId, notes, billType, originalBillId, backdatedCreatedAt
+        );
+      } else {
+        billResult = insertBill.run(
+          billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode, effectiveSalesmanId, notes, billType, originalBillId
+        );
+      }
       const billId = billResult.lastInsertRowid;
 
       for (const item of normalizedItems) {
@@ -158,11 +214,13 @@ export async function POST(request) {
         insertPayment.run(billId, p.mode, p.amount);
       }
 
-      const cashAmount = normalizedPayments
-        .filter(p => p.mode === 'cash')
-        .reduce((s, p) => s + p.amount, 0);
-      if (cashAmount > 0) {
-        updateCashDrawer(db, billType === 'return' ? -cashAmount : cashAmount);
+      if (!isBackdated) {
+        const cashAmount = normalizedPayments
+          .filter(p => p.mode === 'cash')
+          .reduce((s, p) => s + p.amount, 0);
+        if (cashAmount > 0) {
+          updateCashDrawer(db, billType === 'return' ? -cashAmount : cashAmount);
+        }
       }
 
       return { billId, billNumber };
@@ -213,7 +271,9 @@ export async function POST(request) {
       payments: normalizedPayments,
       salesman_name: effectiveSalesmanName,
       notes: notes || null,
-      created_at: istNow,
+      created_at: isBackdated ? backdatedCreatedAt : istNow,
+      is_backdated: isBackdated,
+      bill_date: isBackdated ? billDateInput : null,
     }, { status: 201 });
 
   } catch (err) {

@@ -20,6 +20,30 @@ function formatBillTime(value) {
   });
 }
 
+function getBillISTDate(value) {
+  if (!value || typeof value !== 'string') return '';
+  // created_at is stored as 'YYYY-MM-DD HH:MM:SS' in IST; take the date portion directly.
+  const s = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return '';
+}
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function formatDayLabel(ymd, todayYmd) {
+  if (!ymd) return '';
+  if (ymd === todayYmd) return 'Aaj';
+  const base = new Date(todayYmd + 'T00:00:00Z');
+  const yesterday = new Date(base);
+  yesterday.setUTCDate(base.getUTCDate() - 1);
+  const yYmd = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth()+1).padStart(2,'0')}-${String(yesterday.getUTCDate()).padStart(2,'0')}`;
+  if (ymd === yYmd) return 'Kal';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${DAY_NAMES[dt.getUTCDay()]}, ${d} ${MONTH_NAMES[m - 1]} ${y}`;
+}
+
 function getMinutesSinceCreation(createdAt) {
   if (!createdAt) return Infinity;
   const parsed = new Date(createdAt.replace(' ', 'T') + '+05:30');
@@ -219,21 +243,43 @@ export default function SalesHistory({ onVoidAndRecreate }) {
         <div className="text-center py-8 text-gray-400">Koi bill nahi mila</div>
       ) : (
         <div className="space-y-2">
-          {bills.map(bill => {
-            const isReturn = bill.type === 'return';
-            const minutesOld = getMinutesSinceCreation(bill.created_at);
-            const canSalesmanVoid = user.role === 'salesman' && bill.salesman_id === user.id && minutesOld <= 15;
+          {(() => {
+            const todayYmd = getISTDateInputValue();
+            let lastDate = null;
+            const nodes = [];
+            for (const bill of bills) {
+              const billDate = getBillISTDate(bill.created_at);
+              if (billDate && billDate !== lastDate) {
+                nodes.push(
+                  <div
+                    key={`sep-${billDate}`}
+                    className="text-xs font-semibold text-gray-500 px-2 py-1 bg-gray-50 rounded border border-gray-100 mt-2 first:mt-0"
+                  >
+                    {formatDayLabel(billDate, todayYmd)}
+                  </div>
+                );
+                lastDate = billDate;
+              }
+              const isReturn = bill.type === 'return';
+              const isBackdated = typeof bill.notes === 'string' && bill.notes.includes('[Backdated]');
+              const minutesOld = getMinutesSinceCreation(bill.created_at);
+              const canSalesmanVoid = user.role === 'salesman' && bill.salesman_id === user.id && minutesOld <= 15;
 
-            return (
+              nodes.push(
               <div key={bill.id} className={`card ${isReturn ? 'border-l-4 border-red-400 bg-red-50/30' : ''}`}>
                 <div
                   className="flex items-center justify-between cursor-pointer"
                   onClick={() => setExpandedBill(expandedBill === bill.id ? null : bill.id)}
                 >
                   <div>
-                    <div className="font-medium">
-                      {isReturn && <span className="text-red-600 text-xs font-semibold mr-1">RETURN</span>}
-                      {bill.bill_number}
+                    <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                      {isReturn && <span className="text-red-600 text-xs font-semibold">RETURN</span>}
+                      <span>{bill.bill_number}</span>
+                      {isBackdated && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                          Backdated
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500">
                       {bill.salesman_name} • {formatPayments(bill)}
@@ -383,8 +429,10 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                   </div>
                 )}
               </div>
-            );
-          })}
+              );
+            }
+            return nodes;
+          })()}
 
           {pagination && pagination.pages > 1 && (
             <div className="flex justify-center gap-2 pt-4">
