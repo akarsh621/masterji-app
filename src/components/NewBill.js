@@ -367,7 +367,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         {/* Category bar */}
         {Object.entries(categories).map(([group, cats]) => (
           <div key={group} className="mb-2">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+            <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-1">
               {GROUP_LABELS[group] || group}
             </div>
             <div className="flex flex-wrap gap-1.5">

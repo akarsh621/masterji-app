@@ -117,7 +117,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     try {
       await api.deleteBill(bill.id);
       fetchBills();
-      if (user.role === 'admin' && onVoidAndRecreate) {
+      if (onVoidAndRecreate) {
         const shouldRecreate = confirm('Iske badle naya bill banao?');
         if (shouldRecreate) {
           onVoidAndRecreate({
