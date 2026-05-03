@@ -98,7 +98,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     if (user.role !== 'admin') return;
     api.getUsers()
       .then(d => {
-        const list = (d.users || []).filter(u => u.role === 'salesman');
+        const list = (d.users || []).filter(u => u.active);
         setSalesmen(list);
       })
       .catch(() => {});

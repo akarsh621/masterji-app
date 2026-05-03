@@ -234,30 +234,27 @@ export async function GET(request) {
       weeklyTrend = weekRows;
     }
 
-    let salesmanBreakdown = [];
-    if (result.user.role === 'admin') {
-      salesmanBreakdown = db.prepare(`
-        SELECT
-          b.salesman_id,
-          u.name as salesman_name,
-          COUNT(b.id) as bills,
-          COALESCE(SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END), 0) as revenue
-        FROM bills b
-        JOIN users u ON b.salesman_id = u.id
-        WHERE ${baseWhere}
-        GROUP BY b.salesman_id, u.name
-        ORDER BY revenue DESC
-      `).all(...baseParams);
+    let salesmanBreakdown = db.prepare(`
+      SELECT
+        b.salesman_id,
+        u.name as salesman_name,
+        COUNT(b.id) as bills,
+        COALESCE(SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END), 0) as revenue
+      FROM bills b
+      JOIN users u ON b.salesman_id = u.id
+      WHERE ${baseWhere}
+      GROUP BY b.salesman_id, u.name
+      ORDER BY revenue DESC
+    `).all(...baseParams);
 
-      for (const s of salesmanBreakdown) {
-        const itemCount = db.prepare(`
-          SELECT COALESCE(SUM(bi.quantity), 0) as items
-          FROM bill_items bi
-          JOIN bills b ON bi.bill_id = b.id
-          WHERE b.salesman_id = ? AND ${baseWhere}
-        `).get(s.salesman_id, ...baseParams);
-        s.items = itemCount.items;
-      }
+    for (const s of salesmanBreakdown) {
+      const itemCount = db.prepare(`
+        SELECT COALESCE(SUM(bi.quantity), 0) as items
+        FROM bill_items bi
+        JOIN bills b ON bi.bill_id = b.id
+        WHERE b.salesman_id = ? AND ${baseWhere}
+      `).get(s.salesman_id, ...baseParams);
+      s.items = itemCount.items;
     }
 
     return NextResponse.json({

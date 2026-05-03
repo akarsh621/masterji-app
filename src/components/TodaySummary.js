@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/auth';
 import { api } from '@/lib/api-client';
 import CashOutForm from './CashOutForm';
 import DeltaBadge from '@/components/DeltaBadge';
@@ -17,6 +18,8 @@ function formatTime(value) {
 }
 
 export default function TodaySummary() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cashOutEntries, setCashOutEntries] = useState([]);
@@ -34,7 +37,7 @@ export default function TodaySummary() {
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
-    fetchCashOutEntries();
+    if (isAdmin) fetchCashOutEntries();
   };
 
   useEffect(() => {
@@ -49,7 +52,7 @@ export default function TodaySummary() {
 
   if (!data) return null;
 
-  const { summary, previous_summary, categoryBreakdown } = data;
+  const { summary, previous_summary, categoryBreakdown, salesmanBreakdown } = data;
   const prev = previous_summary || {};
 
   return (
@@ -109,12 +112,13 @@ export default function TodaySummary() {
         </div>
       )}
 
-      {/* Cash out section for salesmen */}
-      <div className="mb-4">
-        <CashOutForm onSuccess={fetchData} />
-      </div>
+      {isAdmin && (
+        <div className="mb-4">
+          <CashOutForm onSuccess={fetchData} />
+        </div>
+      )}
 
-      {cashOutEntries.length > 0 && (
+      {isAdmin && cashOutEntries.length > 0 && (
         <div className="card mb-4">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Aaj ke Cash Out</h3>
           <div className="space-y-2">
@@ -129,6 +133,21 @@ export default function TodaySummary() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {salesmanBreakdown && salesmanBreakdown.length > 0 && (
+        <div className="card mb-4">
+          <h3 className="text-sm font-medium text-gray-500 mb-3">Sales Team Performance</h3>
+          {salesmanBreakdown.map((s, i) => (
+            <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+              <div>
+                <span className="font-medium">{s.salesman_name}</span>
+                <span className="text-gray-400 text-sm ml-2">{s.bills} bills, {s.items} items</span>
+              </div>
+              <span className="font-bold">₹{Math.round(s.revenue).toLocaleString('en-IN')}</span>
+            </div>
+          ))}
         </div>
       )}
 
