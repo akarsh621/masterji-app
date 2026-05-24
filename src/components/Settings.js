@@ -16,6 +16,7 @@ export default function Settings() {
         {[
           { id: 'team', label: 'Sales Team' },
           { id: 'categories', label: 'Categories' },
+          { id: 'upi', label: 'UPI QR' },
           { id: 'admin', label: 'Admin' },
         ].map(t => (
           <button
@@ -32,6 +33,7 @@ export default function Settings() {
 
       {tab === 'team' && <SalesTeamSettings />}
       {tab === 'categories' && <CategorySettings />}
+      {tab === 'upi' && <UpiAccountSettings />}
       {tab === 'admin' && <AdminSettings />}
     </div>
   );
@@ -529,6 +531,285 @@ function AdminSettings() {
           <p>Version 1.0.0</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+const VPA_REGEX = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/;
+
+function maskVpa(vpa) {
+  if (!vpa || typeof vpa !== 'string') return '';
+  const [user, host] = vpa.split('@');
+  if (!host) return vpa;
+  const visible = user.slice(0, 4);
+  return `${visible}${user.length > 4 ? '***' : ''}@${host}`;
+}
+
+function UpiAccountSettings() {
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newUpiId, setNewUpiId] = useState('');
+  const [newPayee, setNewPayee] = useState('');
+  const [newDefault, setNewDefault] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editUpiId, setEditUpiId] = useState('');
+  const [editPayee, setEditPayee] = useState('');
+  const [error, setError] = useState('');
+
+  const fetchAccounts = () => {
+    setLoading(true);
+    api.getUpiAccounts(true)
+      .then(d => setAccounts(d.accounts || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchAccounts(); }, []);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!VPA_REGEX.test(newUpiId.trim())) {
+      setError('UPI ID galat format mein hai (jaise: name@okhdfcbank)');
+      return;
+    }
+    try {
+      await api.createUpiAccount({
+        label: newLabel,
+        upi_id: newUpiId,
+        payee_name: newPayee,
+        is_default: newDefault || accounts.filter(a => a.active).length === 0,
+      });
+      setShowAdd(false);
+      setNewLabel('');
+      setNewUpiId('');
+      setNewPayee('');
+      setNewDefault(false);
+      fetchAccounts();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const startEdit = (a) => {
+    setEditingId(a.id);
+    setEditLabel(a.label);
+    setEditUpiId(a.upi_id);
+    setEditPayee(a.payee_name);
+  };
+
+  const saveEdit = async () => {
+    setError('');
+    if (!VPA_REGEX.test(editUpiId.trim())) {
+      setError('UPI ID galat format mein hai');
+      return;
+    }
+    try {
+      await api.updateUpiAccount(editingId, {
+        label: editLabel,
+        upi_id: editUpiId,
+        payee_name: editPayee,
+      });
+      setEditingId(null);
+      fetchAccounts();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const makeDefault = async (a) => {
+    try {
+      await api.updateUpiAccount(a.id, { is_default: true });
+      fetchAccounts();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const toggleActive = async (a) => {
+    try {
+      await api.updateUpiAccount(a.id, { active: !a.active });
+      fetchAccounts();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDelete = async (a) => {
+    if (!confirm(`${a.label} (${a.upi_id}) ko hatana hai?`)) return;
+    try {
+      await api.deleteUpiAccount(a.id);
+      fetchAccounts();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8 text-gray-500">Loading...</div>;
+
+  const activeAccounts = accounts.filter(a => a.active);
+
+  return (
+    <div>
+      {error && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-gray-500">UPI Accounts</h3>
+        <button onClick={() => setShowAdd(!showAdd)} className="btn-primary text-xs py-1.5 px-3">
+          {showAdd ? 'Cancel' : '+ Add'}
+        </button>
+      </div>
+
+      {showAdd && (
+        <form onSubmit={handleAdd} className="card mb-3 space-y-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Naam (chhota label)</label>
+            <input
+              type="text"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="Shop UPI, Owner Personal..."
+              className="input"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">UPI ID</label>
+            <input
+              type="text"
+              value={newUpiId}
+              onChange={e => setNewUpiId(e.target.value)}
+              placeholder="masterjifh@okhdfcbank"
+              className="input"
+              autoCapitalize="none"
+              autoCorrect="off"
+              required
+            />
+            <p className="text-xs text-gray-400 mt-1">Example: name@okhdfcbank, @oksbi, @ybl, @paytm</p>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Payee Name (UPI app mein dikhega)</label>
+            <input
+              type="text"
+              value={newPayee}
+              onChange={e => setNewPayee(e.target.value)}
+              placeholder="Master Ji Fashion House"
+              className="input"
+              required
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={newDefault}
+              onChange={e => setNewDefault(e.target.checked)}
+            />
+            Default banao (Bill par yahi pre-select hoga)
+          </label>
+          <button type="submit" className="btn-primary w-full text-sm">Save</button>
+        </form>
+      )}
+
+      <div className="space-y-2">
+        {accounts.map(a => (
+          <div key={a.id} className="card">
+            {editingId === a.id ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editLabel}
+                  onChange={e => setEditLabel(e.target.value)}
+                  className="input text-sm"
+                  placeholder="Label"
+                />
+                <input
+                  type="text"
+                  value={editUpiId}
+                  onChange={e => setEditUpiId(e.target.value)}
+                  className="input text-sm"
+                  placeholder="UPI ID"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                />
+                <input
+                  type="text"
+                  value={editPayee}
+                  onChange={e => setEditPayee(e.target.value)}
+                  className="input text-sm"
+                  placeholder="Payee Name"
+                />
+                <div className="flex gap-2">
+                  <button onClick={saveEdit} className="btn-primary text-xs flex-1">Save</button>
+                  <button onClick={() => setEditingId(null)} className="btn-secondary text-xs flex-1">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`font-medium ${!a.active ? 'text-gray-400 line-through' : ''}`}>
+                        {a.label}
+                      </span>
+                      {!!(a.is_default && a.active) && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Default</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-0.5">{a.payee_name}</div>
+                    <div className="text-xs text-gray-400 mt-0.5 break-all">{maskVpa(a.upi_id)}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 mt-2 flex-wrap">
+                  {!!(!a.is_default && a.active) && (
+                    <button
+                      onClick={() => makeDefault(a)}
+                      className="text-xs px-2 py-1 rounded text-blue-600 hover:bg-blue-50"
+                    >
+                      Set Default
+                    </button>
+                  )}
+                  <button
+                    onClick={() => startEdit(a)}
+                    className="text-xs px-2 py-1 rounded text-blue-600 hover:bg-blue-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => toggleActive(a)}
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      a.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {a.active ? 'Active' : 'Inactive'}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(a)}
+                    className="text-xs px-2 py-1 rounded text-red-500 hover:bg-red-50"
+                  >
+                    Hatao
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {accounts.length === 0 && (
+          <div className="text-center py-6 text-gray-400 text-sm">
+            Koi UPI account add nahi hai.<br />
+            + button dabakar ek add karo.<br />
+            <span className="text-xs">QR generate karne ke liye zaroori.</span>
+          </div>
+        )}
+      </div>
+
+      {activeAccounts.length > 0 && !activeAccounts.some(a => a.is_default) && (
+        <div className="mt-3 p-2 bg-amber-50 text-amber-700 rounded text-xs">
+          Koi default UPI set nahi hai. Bill screen par pehla active account dikhega.
+        </div>
+      )}
     </div>
   );
 }

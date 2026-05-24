@@ -165,6 +165,26 @@ const MIGRATIONS = [
       SELECT COALESCE(SUM(bi.mrp * bi.quantity), 0) FROM bill_items bi WHERE bi.bill_id = bills.id AND bi.mrp IS NOT NULL
     ) WHERE mrp_total = 0 OR mrp_total IS NULL`);
   },
+  // v6: Add upi_accounts table for dynamic UPI QR generation
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS upi_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL,
+      upi_id TEXT NOT NULL,
+      payee_name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT (datetime('now','+5 hours','+30 minutes'))
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_upi_accounts_active ON upi_accounts(active)");
+  },
+  // v7: Add audit columns to upi_accounts (created_by, updated_by, updated_at)
+  (db) => {
+    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN created_by INTEGER REFERENCES users(id)"); } catch {}
+    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_by INTEGER REFERENCES users(id)"); } catch {}
+    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_at DATETIME"); } catch {}
+  },
 ];
 
 function runMigrations(db) {

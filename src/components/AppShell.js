@@ -62,21 +62,31 @@ export default function AppShell() {
       )}
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
-          <h1 className="text-lg font-bold text-blue-700">{user.name}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold text-blue-700">{user.name}</h1>
+            <button
+              onClick={logout}
+              className="text-xs text-red-500 hover:text-red-700"
+            >
+              Logout
+            </button>
+          </div>
           <p className="text-xs text-gray-400">{isAdmin ? 'Admin' : 'Sales'} · Master Ji Fashion House</p>
         </div>
-        <div className="flex items-center gap-3">
-          {isAdmin && (
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`text-xl ${activeTab === 'settings' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Settings"
-            >⚙</button>
-          )}
-          <button onClick={logout} className="text-sm text-gray-500 hover:text-red-600">
-            Logout
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium flex items-center gap-1 transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-blue-600 text-white'
+                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+            }`}
+            title="Settings"
+          >
+            <span className="text-base leading-none">⚙</span>
+            <span>Settings</span>
           </button>
-        </div>
+        )}
       </header>
 
       <main className="p-4 max-w-2xl mx-auto">

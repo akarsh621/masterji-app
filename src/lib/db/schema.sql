@@ -98,6 +98,22 @@ CREATE TABLE IF NOT EXISTS expenses (
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(expense_month);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
 
+CREATE TABLE IF NOT EXISTS upi_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    upi_id TEXT NOT NULL,
+    payee_name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
+    updated_by INTEGER REFERENCES users(id),
+    updated_at DATETIME,
+    created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_upi_accounts_active ON upi_accounts(active);
+
 CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
 CREATE INDEX IF NOT EXISTS idx_bills_salesman_id ON bills(salesman_id);
 CREATE INDEX IF NOT EXISTS idx_bills_payment_mode ON bills(payment_mode);

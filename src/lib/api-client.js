@@ -81,6 +81,11 @@ export const api = {
 
   getEarnings: (month) => apiRequest(`/earnings?month=${month}`),
 
+  getUpiAccounts: (all) => apiRequest(`/upi-accounts${all ? '?all=true' : ''}`),
+  createUpiAccount: (body) => apiRequest('/upi-accounts', { method: 'POST', body: JSON.stringify(body) }),
+  updateUpiAccount: (id, body) => apiRequest(`/upi-accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteUpiAccount: (id) => apiRequest(`/upi-accounts/${id}`, { method: 'DELETE' }),
+
   exportCSV: (params) => {
     const token = getToken();
     const qs = new URLSearchParams(params).toString();

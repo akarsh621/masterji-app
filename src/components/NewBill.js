@@ -91,6 +91,10 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitMode, setSplitMode] = useState('upi');
   const [splitAmount, setSplitAmount] = useState('');
+  const [upiAccounts, setUpiAccounts] = useState([]);
+  const [selectedUpiAccountId, setSelectedUpiAccountId] = useState(null);
+  const [showQR, setShowQR] = useState(false);
+  const [qrBlobUrl, setQrBlobUrl] = useState(null);
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState('none');
   const [notes, setNotes] = useState('');
@@ -117,6 +121,12 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       if (!isAdmin && user?.id) {
         setSelectedSalesmanId(user.id);
       }
+    }).catch(() => {});
+    api.getUpiAccounts().then(d => {
+      const list = d.accounts || [];
+      setUpiAccounts(list);
+      const def = list.find(a => a.is_default) || list[0];
+      if (def) setSelectedUpiAccountId(def.id);
     }).catch(() => {});
   }, []);
 
@@ -214,6 +224,58 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const displayTotal = isCashOnly ? cashRounded : total;
   const cashRoundOff = isCashOnly ? total - cashRounded : 0;
 
+  // UPI portion of the payment (handles primary/split combinations)
+  let upiAmount = 0;
+  if (splitEnabled && splitAmount) {
+    const splitAmt = parseFloat(splitAmount) || 0;
+    if (splitAmt > 0 && splitAmt < total) {
+      if (primaryMode === 'upi') upiAmount = Math.round((total - splitAmt) * 100) / 100;
+      else if (splitMode === 'upi') upiAmount = Math.round(splitAmt * 100) / 100;
+    } else if (primaryMode === 'upi') {
+      upiAmount = displayTotal;
+    }
+  } else if (primaryMode === 'upi') {
+    upiAmount = displayTotal;
+  }
+  const activeUpiAccounts = upiAccounts.filter(a => a.active);
+  const selectedUpiAccount = activeUpiAccounts.find(a => a.id === selectedUpiAccountId) || activeUpiAccounts[0];
+  const canShowQR = upiAmount > 0 && activeUpiAccounts.length > 0;
+
+  useEffect(() => {
+    if (!showQR || !canShowQR || !selectedUpiAccount || upiAmount <= 0) {
+      setQrBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+      return;
+    }
+    let cancelled = false;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('masterji_token') : null;
+    fetch(`/api/upi-qr?account_id=${selectedUpiAccount.id}&amount=${upiAmount.toFixed(2)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => {
+        if (!r.ok) throw new Error(`QR fetch failed: ${r.status}`);
+        return r.blob();
+      })
+      .then(blob => {
+        if (cancelled) return;
+        setQrBlobUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(blob);
+        });
+      })
+      .catch(err => {
+        console.error('QR fetch error:', err);
+        if (!cancelled) setQrBlobUrl(null);
+      });
+    return () => { cancelled = true; };
+  }, [showQR, canShowQR, selectedUpiAccount?.id, upiAmount]);
+
+  // Cleanup blob URL on unmount
+  useEffect(() => () => { if (qrBlobUrl) URL.revokeObjectURL(qrBlobUrl); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!canShowQR && showQR) setShowQR(false);
+  }, [canShowQR, showQR]);
+
   const buildPayments = () => {
     if (!splitEnabled || !splitAmount) {
       return [{ mode: primaryMode, amount: displayTotal }];
@@ -267,6 +329,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       setSplitAmount('');
       setBackdateValue('');
       setBackdateOpen(false);
+      setShowQR(false);
       setScreen('items');
     } catch (err) {
       setError(err.message);
@@ -841,25 +904,98 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
           ))}
         </div>
 
-        {/* Split + Note */}
+        {/* UPI QR */}
+        {canShowQR && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowQR(v => !v)}
+              className={`w-full py-2 rounded-full text-sm font-medium transition-colors ${
+                showQR
+                  ? 'border border-purple-300 bg-purple-50 text-red-600'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {showQR
+                ? '✕ QR Hatao'
+                : `📱 UPI QR Dikhao${splitEnabled && splitAmount ? ` (₹${upiAmount.toLocaleString('en-IN')})` : ''}`}
+            </button>
+
+            {showQR && selectedUpiAccount && (
+              <div className="p-3 bg-white border border-purple-200 rounded-lg space-y-3">
+                {activeUpiAccounts.length > 1 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {activeUpiAccounts.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => setSelectedUpiAccountId(a.id)}
+                        className={`flex-1 min-w-[120px] py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                          selectedUpiAccountId === a.id
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-center min-h-[256px] items-center">
+                  {qrBlobUrl ? (
+                    <img src={qrBlobUrl} alt="UPI QR" width={256} height={256} className="rounded-md" />
+                  ) : (
+                    <div className="text-sm text-gray-400">QR load ho raha hai...</div>
+                  )}
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-900">
+                    ₹{upiAmount.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-0.5">
+                    {selectedUpiAccount.payee_name} ko bhejenge
+                  </div>
+                  <div className="text-xs text-gray-400 break-all">
+                    {selectedUpiAccount.upi_id}
+                  </div>
+                </div>
+                <div className="text-xs text-center text-gray-500 px-2">
+                  Customer scan karke pay karega. Paisa aane ke baad Bill Done dabao.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Split + Note (compact chip row) */}
         <div className="space-y-2">
-          <button
-            onClick={() => {
-              setSplitEnabled(!splitEnabled);
-              if (!splitEnabled) {
-                const alt = PAYMENT_MODES.find(m => m.id !== primaryMode);
-                setSplitMode(alt.id);
-                setSplitAmount('');
-              }
-            }}
-            className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors border ${
-              splitEnabled
-                ? 'border-blue-300 bg-blue-50 text-blue-700'
-                : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
-            }`}
-          >
-            {splitEnabled ? '✓ Split Payment On' : 'Split Payment?'}
-          </button>
+          <div className="flex items-center justify-center gap-2 pt-1">
+            <button
+              onClick={() => {
+                setSplitEnabled(!splitEnabled);
+                if (!splitEnabled) {
+                  const alt = PAYMENT_MODES.find(m => m.id !== primaryMode);
+                  setSplitMode(alt.id);
+                  setSplitAmount('');
+                }
+              }}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                splitEnabled
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {splitEnabled ? '✓ Split: On' : '+ Split Payment'}
+            </button>
+            <button
+              onClick={() => setShowNotes(!showNotes)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                showNotes || notes
+                  ? 'border-blue-300 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {notes ? '✓ Note: Added' : '+ Note'}
+            </button>
+          </div>
 
           {splitEnabled && (
             <div className="p-3 bg-gray-50 rounded-lg space-y-2">
@@ -902,17 +1038,6 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
               </div>
             </div>
           )}
-
-          <button
-            onClick={() => setShowNotes(!showNotes)}
-            className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors border ${
-              showNotes || notes
-                ? 'border-blue-300 bg-blue-50 text-blue-700'
-                : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
-            }`}
-          >
-            {notes ? '✓ Note Added' : 'Note?'}
-          </button>
 
           {(showNotes || notes) && (
             <input
