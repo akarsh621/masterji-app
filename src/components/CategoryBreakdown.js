@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { GROUP_LABELS, GROUP_COLORS } from '@/lib/ui-utils';
+import { GROUP_LABELS, GROUP_COLORS, formatRupees } from '@/lib/ui-utils';
 
 const GROUP_ORDER = ['women', 'men', 'kids', 'other'];
 
@@ -47,7 +47,7 @@ export default function CategoryBreakdown({ data }) {
                   {isOpen ? '▾' : '▸'} {GROUP_LABELS[g.key] || g.key}
                 </span>
                 <span className="font-medium">
-                  ₹{fmt(g.revenue)} · {g.quantity} items
+                  {formatRupees(g.revenue)} · {g.quantity} items
                 </span>
               </div>
               <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -68,7 +68,7 @@ export default function CategoryBreakdown({ data }) {
                       <div key={i}>
                         <div className="flex justify-between text-xs text-gray-600">
                           <span>{cat.category_name}</span>
-                          <span>₹{fmt(cat.revenue)} · {cat.quantity} items</span>
+                          <span>{formatRupees(cat.revenue)} · {cat.quantity} items</span>
                         </div>
                         <div className="h-1 bg-gray-100 rounded-full overflow-hidden mt-0.5">
                           <div

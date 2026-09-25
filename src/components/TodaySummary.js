@@ -6,7 +6,7 @@ import { api } from '@/lib/api-client';
 import LoadError from '@/components/LoadError';
 import CashOutForm from './CashOutForm';
 import DeltaBadge from '@/components/DeltaBadge';
-import { getISTDateInputValue, REASON_LABELS } from '@/lib/ui-utils';
+import { getISTDateInputValue, REASON_LABELS, formatRupees } from '@/lib/ui-utils';
 import CategoryBreakdown from '@/components/CategoryBreakdown';
 
 function formatTime(value) {
@@ -77,7 +77,7 @@ export default function TodaySummary() {
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="card text-center">
           <div className="text-2xl font-bold text-gray-900">
-            ₹{Math.round(summary.total_revenue).toLocaleString('en-IN')}
+            {formatRupees(summary.total_revenue)}
             <DeltaBadge current={summary.total_revenue} previous={prev.total_revenue} />
           </div>
           <div className="text-xs text-gray-500 mt-1">Net Sale</div>
@@ -100,15 +100,15 @@ export default function TodaySummary() {
 
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-green-700">₹{Math.round(summary.cash_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-green-700">{formatRupees(summary.cash_total)}</div>
           <div className="text-xs text-gray-500">💵 Cash</div>
         </div>
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-purple-700">₹{Math.round(summary.upi_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-purple-700">{formatRupees(summary.upi_total)}</div>
           <div className="text-xs text-gray-500">📱 UPI</div>
         </div>
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-teal-700">₹{Math.round(summary.card_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-teal-700">{formatRupees(summary.card_total)}</div>
           <div className="text-xs text-gray-500">💳 Card</div>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function TodaySummary() {
                 <span className="font-medium">{s.salesman_name}</span>
                 <span className="text-gray-400 text-sm ml-2">{s.bills} bills, {s.items} items</span>
               </div>
-              <span className="font-bold">₹{Math.round(s.revenue).toLocaleString('en-IN')}</span>
+              <span className="font-bold">{formatRupees(s.revenue)}</span>
             </div>
           ))}
         </div>

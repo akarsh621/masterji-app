@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb, generateBillNumber, updateCashDrawer, getISTNow } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { isValidDate, todayIST, daysBetweenYMD } from '@/lib/date-utils';
+import { normalizePhone, isValidPhone } from '@/lib/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,14 @@ export async function POST(request) {
     const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
     // "Bill badlo": this bill replaces an existing one (cancel + reissue in one step).
     const replacesBillId = body?.replaces_bill_id ? Number(body.replaces_bill_id) : null;
+    // Optional customer. Invalid numbers are refused: a half-typed number is
+    // worse than none in a customer list.
+    const customerPhoneRaw = typeof body?.customer_phone === 'string' ? body.customer_phone.trim() : '';
+    const customerPhone = customerPhoneRaw ? normalizePhone(customerPhoneRaw) : '';
+    const customerName = typeof body?.customer_name === 'string' ? body.customer_name.trim().slice(0, 60) : '';
+    if (customerPhoneRaw && !isValidPhone(customerPhone)) {
+      return NextResponse.json({ error: 'Customer ka mobile number sahi nahi hai (10 digit)' }, { status: 400 });
+    }
     let notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
     const billType = 'sale';
     const originalBillId = null;
@@ -185,8 +194,9 @@ export async function POST(request) {
 
     const insertBill = db.prepare(`
       INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode,
-                         salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, replaces_bill_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
+                         salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, replaces_bill_id,
+                         customer_id, customer_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
     `);
 
     const insertItem = db.prepare(`
@@ -214,10 +224,27 @@ export async function POST(request) {
       // A correction keeps the original bill's date and backdated status.
       const billIsBackdated = replacing ? !!replacing.is_backdated : isBackdated;
       const createdAt = replacing ? replacing.created_at : (isBackdated ? backdatedCreatedAt : null);
+
+      let customerId = null;
+      let billCustomerName = customerName || null;
+      if (customerPhone) {
+        const seenAt = createdAt || getISTNow();
+        const existing = db.prepare('SELECT id, name FROM customers WHERE phone = ?').get(customerPhone);
+        if (existing) {
+          customerId = existing.id;
+          db.prepare(`UPDATE customers SET name = COALESCE(?, name),
+                         last_seen_at = MAX(COALESCE(last_seen_at, ''), ?) WHERE id = ?`)
+            .run(customerName || null, seenAt, existing.id);
+          if (!billCustomerName) billCustomerName = existing.name || null;
+        } else {
+          customerId = db.prepare('INSERT INTO customers (phone, name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?)')
+            .run(customerPhone, customerName || null, seenAt, seenAt).lastInsertRowid;
+        }
+      }
       const billResult = insertBill.run(
         billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode,
         effectiveSalesmanId, notes, billType, originalBillId, billIsBackdated ? 1 : 0, clientRequestId,
-        replacing ? replacing.id : null, createdAt
+        replacing ? replacing.id : null, customerId, billCustomerName, createdAt
       );
       const billId = billResult.lastInsertRowid;
 
@@ -351,6 +378,8 @@ export async function POST(request) {
       created_at: replacing ? replacing.created_at : (isBackdated ? backdatedCreatedAt : istNow),
       is_backdated: replacing ? !!replacing.is_backdated : isBackdated,
       replaces_bill_number: replacing ? replacing.bill_number : null,
+      customer_phone: customerPhone || null,
+      customer_name: customerName || null,
       bill_date: isBackdated ? billDateInput : null,
     }, { status: 201 });
 
@@ -383,6 +412,10 @@ export async function GET(request) {
     const to = searchParams.get('to');
     const salesman_id = searchParams.get('salesman_id');
     const payment_mode = searchParams.get('payment_mode');
+    // Search across all dates: bill number (MJF-0231 or 231), customer phone,
+    // customer name, or exact amount.
+    const q = (searchParams.get('q') || '').trim().slice(0, 50);
+    const customerIdFilter = searchParams.get('customer_id');
     const offset = (page - 1) * limit;
 
     if (from && !isDateOnly(from)) {
@@ -412,13 +445,39 @@ export async function GET(request) {
       params.push(salesmanIdNumber);
     }
 
-    if (from) {
-      where.push('b.created_at >= ?');
-      params.push(`${from} 00:00:00`);
+    if (customerIdFilter) {
+      const cid = Number(customerIdFilter);
+      if (!Number.isInteger(cid) || cid <= 0) {
+        return NextResponse.json({ error: 'Customer filter invalid hai' }, { status: 400 });
+      }
+      where.push('b.customer_id = ?');
+      params.push(cid);
     }
-    if (to) {
-      where.push('b.created_at <= ?');
-      params.push(to + ' 23:59:59');
+
+    if (q) {
+      const digits = q.replace(/\D/g, '');
+      const ors = ['b.bill_number LIKE ?', 'b.customer_name LIKE ?', 'c.name LIKE ?'];
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+      if (digits.length >= 3) {
+        ors.push('c.phone LIKE ?');
+        params.push(`%${digits}%`);
+      }
+      const amount = Number(q.replace(/[₹,\s]/g, ''));
+      if (q.replace(/[₹,\s]/g, '') !== '' && Number.isFinite(amount)) {
+        ors.push('ABS(b.total - ?) < 0.01');
+        params.push(amount);
+      }
+      where.push(`(${ors.join(' OR ')})`);
+    } else {
+      // Date range only applies when not searching (search covers all dates).
+      if (from) {
+        where.push('b.created_at >= ?');
+        params.push(`${from} 00:00:00`);
+      }
+      if (to) {
+        where.push('b.created_at <= ?');
+        params.push(to + ' 23:59:59');
+      }
     }
     if (payment_mode) {
       where.push('b.payment_mode = ?');
@@ -428,15 +487,16 @@ export async function GET(request) {
     const whereClause = where.join(' AND ');
 
     const countRow = db.prepare(
-      `SELECT COUNT(*) as total FROM bills b WHERE ${whereClause}`
+      `SELECT COUNT(*) as total FROM bills b LEFT JOIN customers c ON c.id = b.customer_id WHERE ${whereClause}`
     ).get(...params);
 
     const bills = db.prepare(`
-      SELECT b.*, u.name as salesman_name,
+      SELECT b.*, u.name as salesman_name, c.phone AS customer_phone,
              (SELECT ob.bill_number FROM bills ob WHERE ob.id = b.original_bill_id) AS original_bill_number,
              (SELECT rb.bill_number FROM bills rb WHERE rb.id = b.replaces_bill_id) AS replaces_bill_number
       FROM bills b
       JOIN users u ON b.salesman_id = u.id
+      LEFT JOIN customers c ON c.id = b.customer_id
       WHERE ${whereClause}
       ORDER BY b.created_at DESC, b.id DESC
       LIMIT ? OFFSET ?

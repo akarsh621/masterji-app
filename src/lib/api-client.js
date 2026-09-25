@@ -126,6 +126,10 @@ export const api = {
 
   getEarnings: (month) => apiRequest(`/earnings?month=${month}`),
 
+  lookupCustomer: (phone) => apiRequest(`/customers/lookup?phone=${encodeURIComponent(phone)}`),
+  getCustomers: (params) => apiRequest(`/customers?${new URLSearchParams(params).toString()}`),
+  customersCSV: () => apiRequest('/customers?format=csv', { rawResponse: true, timeout: 60000 }),
+
 
   exportCSV: (params) => {
     const qs = new URLSearchParams(params).toString();

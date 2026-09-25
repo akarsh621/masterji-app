@@ -30,7 +30,7 @@ export async function GET(request) {
     `).get();
 
     const totalItems = db.prepare(`
-      SELECT COALESCE(SUM(bi.quantity), 0) as total
+      SELECT COALESCE(SUM(CASE WHEN b.type = 'return' THEN -bi.quantity ELSE bi.quantity END), 0) as total
       FROM bill_items bi JOIN bills b ON bi.bill_id = b.id
       WHERE b.deleted_at IS NULL AND ${dateWhere}
     `).get();
@@ -68,14 +68,34 @@ export async function GET(request) {
       ORDER BY co.created_at DESC
     `).all();
 
-    const cashIn = Math.max(0, paymentSplit.cash_total);
-    const cashRefunds = paymentSplit.cash_total < 0 ? Math.abs(paymentSplit.cash_total) : 0;
+    // Cash that actually moved through the drawer today, line by line.
+    // Backdated bills never touched the drawer, so they're left out here.
+    const cashOf = (billFilter) => db.prepare(`
+      SELECT COALESCE(SUM(bp.amount), 0) AS cash
+      FROM bill_payments bp JOIN bills b ON bp.bill_id = b.id
+      WHERE bp.mode = 'cash' AND ${billFilter}
+    `).get().cash;
+    const today = "date('now', '+5 hours', '+30 minutes')";
+    const cashIn = cashOf(`b.type = 'sale' AND b.deleted_at IS NULL AND b.is_backdated = 0 AND date(b.created_at) = ${today}`);
+    const cashRefunds = cashOf(`b.type = 'return' AND b.deleted_at IS NULL AND date(b.created_at) = ${today}`);
+
+    // Bills from earlier days cancelled or corrected today change today's drawer:
+    // a cancelled sale's cash goes back out, a cancelled return's refund comes
+    // back in, and a correction's new cash comes in.
+    const earlierCancelled = `b.deleted_at IS NOT NULL AND date(b.deleted_at) = ${today}
+      AND date(b.created_at) < ${today} AND b.is_backdated = 0`;
+    const cancelledSalesCash = cashOf(`b.type = 'sale' AND ${earlierCancelled}`);
+    const cancelledReturnsCash = cashOf(`b.type = 'return' AND ${earlierCancelled}`);
+    const correctionsCash = cashOf(`b.deleted_at IS NULL AND b.replaces_bill_id IN
+      (SELECT id FROM bills b WHERE ${earlierCancelled})`);
+    const cashAdjustment = Math.round((correctionsCash + cancelledReturnsCash - cancelledSalesCash) * 100) / 100;
 
     return NextResponse.json({
       cash_drawer: cashDrawer,
       petty_cash_target: pettyCashTarget,
       cash_in: cashIn,
       cash_refunds: cashRefunds,
+      cash_adjustment: cashAdjustment,
       cash_out: cashOutSummary,
       cash_out_entries: cashOutEntries,
       payment_split: paymentSplit,

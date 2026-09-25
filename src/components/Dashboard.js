@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api-client';
-import { getISTDateInputValue } from '@/lib/ui-utils';
+import { getISTDateInputValue, formatRupees } from '@/lib/ui-utils';
 import DeltaBadge from '@/components/DeltaBadge';
 import CategoryBreakdown from '@/components/CategoryBreakdown';
 import LoadError from '@/components/LoadError';
+import { currentISTMonth, prevMonth, nextMonth, monthLabel, monthRange } from '@/lib/date-utils';
 
 export default function Dashboard() {
   const [view, setView] = useState('today');
@@ -14,6 +15,9 @@ export default function Dashboard() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [trendMode, setTrendMode] = useState('weekly');
+  // Mahina view: which month is shown (defaults to, and can't go past, this month).
+  const thisMonth = currentISTMonth();
+  const [month, setMonth] = useState(thisMonth);
   const [exporting, setExporting] = useState(false);
 
   const [loadError, setLoadError] = useState('');
@@ -28,6 +32,8 @@ export default function Dashboard() {
     if (v === 'custom' && from && to) {
       params.from = from;
       params.to = to;
+    } else if (v === 'month') {
+      params.month = month;
     } else {
       params.view = v || view;
     }
@@ -40,7 +46,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (view === 'custom') return;
     fetchData(view);
-  }, [view]);
+  }, [view, month]);
 
   const changeView = (v) => {
     setView(v);
@@ -78,10 +84,9 @@ export default function Dashboard() {
         params.from = `${y}-${m}-${d}`;
         params.to = today;
       } else if (view === 'month') {
-        const now = new Date();
-        const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-        params.from = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-01`;
-        params.to = today;
+        const range = monthRange(month);
+        params.from = range.from;
+        params.to = range.to < today ? range.to : today;
       } else {
         params.from = today;
         params.to = today;
@@ -92,7 +97,7 @@ export default function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `masterji-bills-${view}.csv`;
+      a.download = `masterji-bills-${view === 'month' ? month : view}.csv`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
@@ -144,6 +149,19 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {view === 'month' && (
+        <div className="flex items-center justify-center gap-4 mb-4">
+          <button onClick={() => setMonth(prevMonth(month))} className="text-xl text-blue-600 px-3 min-h-[44px]" aria-label="Pichla mahina">←</button>
+          <h3 className="text-lg font-bold text-gray-800 min-w-[180px] text-center">{monthLabel(month)}</h3>
+          <button
+            onClick={() => month < thisMonth && setMonth(nextMonth(month))}
+            disabled={month >= thisMonth}
+            className={`text-xl px-3 min-h-[44px] ${month < thisMonth ? 'text-blue-600' : 'text-gray-300 cursor-not-allowed'}`}
+            aria-label="Agla mahina"
+          >→</button>
+        </div>
+      )}
+
       {view === 'custom' && (
         <div className="card mb-4">
           <div className="grid grid-cols-2 gap-2 mb-2">
@@ -163,7 +181,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="card text-center">
           <div className="text-2xl font-bold">
-            ₹{Math.round(summary.total_revenue).toLocaleString('en-IN')}
+            {formatRupees(summary.total_revenue)}
             <DeltaBadge current={summary.total_revenue} previous={prev.total_revenue} />
           </div>
           <div className="text-xs text-gray-500 mt-1">Net Revenue</div>
@@ -194,15 +212,15 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-green-700">₹{Math.round(summary.cash_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-green-700">{formatRupees(summary.cash_total)}</div>
           <div className="text-xs text-gray-500">💵 Cash</div>
         </div>
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-purple-700">₹{Math.round(summary.upi_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-purple-700">{formatRupees(summary.upi_total)}</div>
           <div className="text-xs text-gray-500">📱 UPI</div>
         </div>
         <div className="card text-center py-2">
-          <div className="text-lg font-bold text-teal-700">₹{Math.round(summary.card_total).toLocaleString('en-IN')}</div>
+          <div className="text-lg font-bold text-teal-700">{formatRupees(summary.card_total)}</div>
           <div className="text-xs text-gray-500">💳 Card</div>
         </div>
       </div>
@@ -224,11 +242,11 @@ export default function Dashboard() {
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-600">Avg Bill Value</span>
             <span className="text-lg font-bold">
-              ₹{Math.round(summary.total_revenue / summary.total_bills).toLocaleString('en-IN')}
+              ₹{Math.round(summary.avg_bill).toLocaleString('en-IN')}
               {prev.total_bills > 0 && (
                 <DeltaBadge
-                  current={summary.total_revenue / summary.total_bills}
-                  previous={prev.total_revenue / prev.total_bills}
+                  current={summary.avg_bill}
+                  previous={prev.avg_bill}
                 />
               )}
             </span>
@@ -312,7 +330,7 @@ export default function Dashboard() {
                 <span className="font-medium">{s.salesman_name}</span>
                 <span className="text-gray-400 text-sm ml-2">{s.bills} bills, {s.items} items</span>
               </div>
-              <span className="font-bold">₹{Math.round(s.revenue).toLocaleString('en-IN')}</span>
+              <span className="font-bold">{formatRupees(s.revenue)}</span>
             </div>
           ))}
         </div>

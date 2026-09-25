@@ -21,3 +21,33 @@ export function daysBetweenYMD(earlier, later) {
   const b = new Date(later + 'T00:00:00Z').getTime();
   return Math.round((b - a) / 86400000);
 }
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Current month in India as YYYY-MM.
+export function currentISTMonth() {
+  return todayIST().slice(0, 7);
+}
+
+export function prevMonth(m) {
+  const [y, mo] = m.split('-').map(Number);
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+}
+
+export function nextMonth(m) {
+  const [y, mo] = m.split('-').map(Number);
+  return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+}
+
+// "September 2026"
+export function monthLabel(m) {
+  const [y, mo] = m.split('-').map(Number);
+  return `${MONTH_NAMES[mo - 1]} ${y}`;
+}
+
+// First and last date (YYYY-MM-DD) of a YYYY-MM month.
+export function monthRange(m) {
+  const [y, mo] = m.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  return { from: `${m}-01`, to: `${m}-${String(lastDay).padStart(2, '0')}` };
+}

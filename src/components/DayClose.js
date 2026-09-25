@@ -74,7 +74,7 @@ export default function DayClose() {
   }
   if (!data) return loadError ? <LoadError message={loadError} onRetry={fetchData} /> : null;
 
-  const { cash_drawer, petty_cash_target, cash_in, cash_refunds, cash_out, cash_out_entries, payment_split, sales } = data;
+  const { cash_drawer, petty_cash_target, cash_in, cash_refunds, cash_adjustment = 0, cash_out, cash_out_entries, payment_split, sales } = data;
 
   const sweepDefault = Math.max(0, Math.round(cash_drawer - petty_cash_target));
 
@@ -98,7 +98,7 @@ export default function DayClose() {
   const sweepTotal = cash_out.sweep_total || 0;
   const manualTotal = (cash_out.manual_total || 0) + (cash_out.expense_total || 0)
     + (cash_out.supplier_total || 0) + (cash_out.owner_total || 0) + (cash_out.other_total || 0);
-  const hasCashFlow = cash_in > 0 || cash_refunds > 0 || sweepTotal > 0 || manualTotal > 0;
+  const hasCashFlow = cash_in > 0 || cash_refunds > 0 || cash_adjustment !== 0 || sweepTotal > 0 || manualTotal > 0;
 
   return (
     <div>
@@ -217,6 +217,15 @@ export default function DayClose() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Returns</span>
               <span className="text-sm font-medium text-red-600">-₹{Math.round(cash_refunds).toLocaleString('en-IN')}</span>
+            </div>
+          )}
+
+          {cash_adjustment !== 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Pichle bills cancel / badle</span>
+              <span className={`text-sm font-medium ${cash_adjustment > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                {cash_adjustment > 0 ? '+' : '-'}₹{Math.round(Math.abs(cash_adjustment)).toLocaleString('en-IN')}
+              </span>
             </div>
           )}
 

@@ -67,6 +67,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
       to: todayIst,
       payment_mode: '',
       salesman_id: '',
+      q: '',
     };
   });
   const [expandedBill, setExpandedBill] = useState(null);
@@ -94,6 +95,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     if (filters.to) params.to = filters.to;
     if (filters.payment_mode) params.payment_mode = filters.payment_mode;
     if (filters.salesman_id) params.salesman_id = filters.salesman_id;
+    if (filters.q.trim()) params.q = filters.q.trim();
 
     api.getBills(params)
       .then(d => {
@@ -137,6 +139,8 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     if (!onVoidAndRecreate) return;
     onVoidAndRecreate({
       replaces: { id: bill.id, bill_number: bill.bill_number },
+      customer_phone: bill.customer_phone || '',
+      customer_name: bill.customer_name || '',
       salesman_id: bill.salesman_id,
       final_price: bill.discount_amount > 0 ? bill.total : null,
       items: bill.items.map(i => {
@@ -212,6 +216,29 @@ export default function SalesHistory({ onVoidAndRecreate }) {
       <h2 className="text-lg font-bold mb-4">Bill Book</h2>
 
       <form onSubmit={handleSearch} className="card mb-4 space-y-3">
+        <div>
+          <div className="flex gap-2">
+            <input
+              type="search"
+              value={filters.q}
+              onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
+              placeholder="Bill no., mobile, naam ya amount"
+              className="input"
+            />
+            {filters.q && (
+              <button
+                type="button"
+                onClick={() => { setFilters(f => ({ ...f, q: '' })); }}
+                className="px-3 text-sm text-gray-500 border border-gray-200 rounded-lg"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {filters.q.trim() && (
+            <p className="text-xs text-gray-500 mt-1">Sab dates mein dhoondhega (date filter nahi lagega)</p>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs text-gray-500 mb-1">From</label>
@@ -308,6 +335,11 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         </span>
                       )}
                     </div>
+                    {(bill.customer_name || bill.customer_phone) && (
+                      <div className="text-xs text-gray-600">
+                        👤 {[bill.customer_name, bill.customer_phone].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                     {isReturn && bill.original_bill_number && (
                       <div className="text-xs text-red-600">← {bill.original_bill_number} ka return</div>
                     )}

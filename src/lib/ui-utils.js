@@ -33,3 +33,9 @@ export const GROUP_COLORS = {
   men: { bg: 'bg-blue-500', text: 'text-blue-700', light: 'bg-blue-50' },
   other: { bg: 'bg-gray-500', text: 'text-gray-700', light: 'bg-gray-50' },
 };
+
+// Rupees with the sign in front of the symbol: 1234 -> ₹1,234, -999 -> -₹999.
+export function formatRupees(n) {
+  const value = Math.round(Number(n) || 0);
+  return `${value < 0 ? '-' : ''}₹${Math.abs(value).toLocaleString('en-IN')}`;
+}

@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api-client';
 import LoadError from '@/components/LoadError';
+import { currentISTMonth, prevMonth, nextMonth, monthLabel } from '@/lib/date-utils';
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 const CATEGORY_META = {
@@ -26,26 +26,6 @@ const TOOLTIPS = {
   items_bill: 'Ek bill mein average kitne items hote hain',
 };
 
-function getISTMonth() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function prevMonth(m) {
-  const [y, mo] = m.split('-').map(Number);
-  if (mo === 1) return `${y - 1}-12`;
-  return `${y}-${String(mo - 1).padStart(2, '0')}`;
-}
-function nextMonth(m) {
-  const [y, mo] = m.split('-').map(Number);
-  if (mo === 12) return `${y + 1}-01`;
-  return `${y}-${String(mo + 1).padStart(2, '0')}`;
-}
-function monthLabel(m) {
-  const [y, mo] = m.split('-').map(Number);
-  return `${MONTHS[mo - 1]} ${y}`;
-}
 function shortDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
@@ -83,7 +63,7 @@ function stockColor(pct) {
 }
 
 export default function Earnings() {
-  const currentMonth = getISTMonth();
+  const currentMonth = currentISTMonth();
   const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState(null);
   const [expenseData, setExpenseData] = useState(null);
@@ -266,7 +246,7 @@ export default function Earnings() {
       {/* Key Numbers Grid */}
       {rev.sale_count > 0 && (
         <div className="grid grid-cols-2 gap-3">
-          <NumberCard value={fmt(Math.round(rev.net_revenue / rev.sale_count))} label="Avg Bill" tip={TOOLTIPS.avg_bill} />
+          <NumberCard value={fmt(rev.sale_count > 0 ? Math.round(rev.total_sales / rev.sale_count) : 0)} label="Avg Bill" tip={TOOLTIPS.avg_bill} />
           <NumberCard value={rev.sale_count} label="Total Bills" />
           <NumberCard value={rev.active_days > 0 ? fmt(Math.round(rev.net_revenue / rev.active_days)) : '—'} label="Revenue/Day" tip={TOOLTIPS.revenue_day} />
           <NumberCard value={rev.sale_count > 0 ? (rev.total_items / rev.sale_count).toFixed(1) : '—'} label="Items/Bill" tip={TOOLTIPS.items_bill} />

@@ -65,9 +65,12 @@ export async function GET(request) {
         b.discount_amount,
         b.total,
         b.payment_mode,
-        b.notes
+        b.notes,
+        b.customer_name,
+        cu.phone AS customer_phone
       FROM bills b
       JOIN users u ON b.salesman_id = u.id
+      LEFT JOIN customers cu ON cu.id = b.customer_id
       WHERE ${whereClause}
       ORDER BY b.created_at DESC, b.id
     `).all(...params);
@@ -109,7 +112,8 @@ export async function GET(request) {
     const headers = [
       'Bill No', 'Type', 'Date', 'Time', 'Salesman',
       'Qty', 'MRP Total', 'Subtotal', 'Discount %', 'Discount Amt',
-      'Total', 'Payment Mode', 'Payment Split', 'Items Detail', 'Notes'
+      'Total', 'Payment Mode', 'Payment Split', 'Items Detail', 'Notes',
+      'Customer Phone', 'Customer Name'
     ];
 
     let csv = headers.join(',') + '\n';
@@ -125,7 +129,7 @@ export async function GET(request) {
       ).join(', ');
 
       const paymentSplit = payments.map(p =>
-        `${p.mode}:${Math.round(p.amount)}`
+        `${p.mode}:${Math.round(p.amount * 100) / 100}`
       ).join(', ');
 
       const dateStr = bill.created_at ? bill.created_at.split(' ')[0] : '';
@@ -138,15 +142,17 @@ export async function GET(request) {
         timeStr,
         bill.salesman,
         totalQty,
-        Math.round(bill.mrp_total || 0),
-        Math.round(bill.subtotal),
+        Math.round((bill.mrp_total || 0) * 100) / 100,
+        Math.round((bill.subtotal) * 100) / 100,
         bill.discount_percent || 0,
-        Math.round(bill.discount_amount || 0),
-        Math.round(bill.total),
+        Math.round((bill.discount_amount || 0) * 100) / 100,
+        Math.round((bill.total) * 100) / 100,
         bill.payment_mode,
         paymentSplit,
         itemDetail,
         bill.notes || '',
+        bill.customer_phone || '',
+        bill.customer_name || '',
       ].map(csvEscape).join(',');
 
       csv += line + '\n';

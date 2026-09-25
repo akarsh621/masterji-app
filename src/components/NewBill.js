@@ -5,6 +5,7 @@ import { useAuth } from '@/context/auth';
 import { api, newRequestId } from '@/lib/api-client';
 import { loadDraft, saveDraft, clearDraft } from '@/lib/bill-draft';
 import LoadError from '@/components/LoadError';
+import { normalizePhone, isValidPhone } from '@/lib/phone';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 
@@ -99,6 +100,10 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
   const [editingTotal, setEditingTotal] = useState(false);
   // Set while correcting a saved bill via "Bill badlo": { id, bill_number }.
   const [replacesBill, setReplacesBill] = useState(null);
+  // Optional customer (builds the customer list). Never required.
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerLookup, setCustomerLookup] = useState(null); // { customer, phone } once looked up
   const [notes, setNotes] = useState('');
   const [showNotes, setShowNotes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -150,6 +155,8 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
       }
       if (prefillData.notes) { setNotes(prefillData.notes); setShowNotes(true); }
       setReplacesBill(prefillData.replaces || null);
+      setCustomerPhone(prefillData.customer_phone || '');
+      setCustomerName(prefillData.customer_name || '');
       if (prefillData.salesman_id) setSelectedSalesmanId(prefillData.salesman_id);
       if (prefillData.final_price) {
         setDiscountMode('final');
@@ -182,6 +189,8 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
     if (d.selectedSalesmanId) setSelectedSalesmanId(d.selectedSalesmanId);
     setBackdateValue(d.backdateValue || '');
     setReplacesBill(d.replacesBill || null);
+    setCustomerPhone(d.customerPhone || '');
+    setCustomerName(d.customerName || '');
     setDraftRestored(true);
   }, [user?.id, prefillData]);
 
@@ -192,11 +201,27 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
     } else {
       saveDraft(user.id, {
         items, discountInput, discountMode, primaryMode, splitEnabled, splitMode,
-        splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill,
+        splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill, customerPhone, customerName,
       });
     }
     if (onDraftChange) onDraftChange(items.length > 0);
-  }, [user?.id, items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill, onDraftChange]);
+  }, [user?.id, items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill, customerPhone, customerName, onDraftChange]);
+
+  const normalizedCustomerPhone = normalizePhone(customerPhone);
+  const customerPhoneValid = isValidPhone(normalizedCustomerPhone);
+  const customerPhoneInvalid = customerPhone.trim() !== '' && !customerPhoneValid;
+  useEffect(() => {
+    if (!customerPhoneValid) { setCustomerLookup(null); return; }
+    let cancelled = false;
+    api.lookupCustomer(normalizedCustomerPhone)
+      .then(d => {
+        if (cancelled) return;
+        setCustomerLookup(d);
+        if (d.customer?.name) setCustomerName(prev => prev || d.customer.name);
+      })
+      .catch(() => { if (!cancelled) setCustomerLookup(null); }); // lookup is a convenience only
+    return () => { cancelled = true; };
+  }, [normalizedCustomerPhone, customerPhoneValid]);
 
   // Android Back on the Payment step goes back to the items, not out of the app.
   useEffect(() => {
@@ -308,7 +333,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
 
   useEffect(() => {
     billRequestId.current = newRequestId();
-  }, [items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue]);
+  }, [items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue, customerPhone, customerName]);
 
   const splitAmountNumber = Math.round((parseFloat(splitAmount) || 0) * 100) / 100;
   const splitInvalid = splitEnabled && splitAmount !== '' && (splitAmountNumber <= 0 || splitAmountNumber >= total);
@@ -343,6 +368,9 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
     setScreen('items');
     setDraftRestored(false);
     setReplacesBill(null);
+    setCustomerPhone('');
+    setCustomerName('');
+    setCustomerLookup(null);
     clearDraft(user?.id);
   };
 
@@ -350,6 +378,10 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
     if (items.length === 0 || submitLock.current) return;
     if (!primaryMode) {
       setPaymentModeMissing(true);
+      return;
+    }
+    if (customerPhoneInvalid) {
+      setError('Customer ka mobile number 10 digit ka hona chahiye — ya khaali chhodo');
       return;
     }
     if (splitInvalid) {
@@ -377,6 +409,10 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
       };
       if (replacesBill) {
         billPayload.replaces_bill_id = replacesBill.id;
+      }
+      if (customerPhoneValid) {
+        billPayload.customer_phone = normalizedCustomerPhone;
+        billPayload.customer_name = customerName.trim();
       }
       if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
@@ -865,6 +901,40 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
           )}
         </div>
       )}
+
+      {/* Customer (optional) */}
+      <div className="card mb-3 space-y-2">
+        <label className="text-sm text-gray-500" htmlFor="customer-phone">Customer mobile (optional)</label>
+        <input
+          id="customer-phone"
+          type="tel"
+          inputMode="numeric"
+          autoComplete="off"
+          value={customerPhone}
+          onChange={e => setCustomerPhone(e.target.value.replace(/[^\d+\s-]/g, '').slice(0, 16))}
+          placeholder="98765 43210"
+          className="input"
+        />
+        {customerPhoneInvalid && normalizedCustomerPhone.length >= 10 && (
+          <div className="text-sm text-red-600">Ye number sahi nahi lag raha</div>
+        )}
+        {customerPhoneValid && (
+          <>
+            {customerLookup?.customer && (
+              <div className="text-sm text-green-700">
+                Pehle aa chuke hain · {customerLookup.customer.visits} bill
+              </div>
+            )}
+            <input
+              type="text"
+              value={customerName}
+              onChange={e => setCustomerName(e.target.value.slice(0, 60))}
+              placeholder="Naam (optional)"
+              className="input"
+            />
+          </>
+        )}
+      </div>
 
       <div className="card space-y-3">
         {/* Total — tap to set a final price (same gesture as editing an item price) */}

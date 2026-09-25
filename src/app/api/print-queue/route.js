@@ -55,7 +55,7 @@ export async function GET(request) {
       SELECT pq.id as queue_id, pq.status as queue_status, pq.created_at as queued_at,
              b.id as bill_id, b.bill_number, b.subtotal, b.mrp_total,
              b.discount_percent, b.discount_amount, b.total,
-             b.payment_mode, b.notes, b.created_at,
+             b.payment_mode, b.notes, b.created_at, b.customer_name,
              s.name as salesman_name, u.name as requested_by_name
       FROM print_queue pq
       JOIN bills b ON b.id = pq.bill_id
@@ -108,6 +108,7 @@ export async function GET(request) {
       total: j.total,
       payment_mode: j.payment_mode,
       notes: j.notes,
+      customer_name: j.customer_name,
       created_at: j.created_at,
       salesman_name: j.salesman_name,
       requested_by_name: j.requested_by_name,

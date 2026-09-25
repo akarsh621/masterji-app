@@ -218,6 +218,22 @@ const MIGRATIONS = [
   (db) => {
     db.exec('DROP TABLE IF EXISTS upi_accounts');
   },
+  // v11: Optional customer on bills. A phone number is a household (family
+  // members share one), so bills also keep the name as typed on that bill.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL UNIQUE,
+      name TEXT,
+      first_seen_at DATETIME,
+      last_seen_at DATETIME,
+      created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+    )`);
+    addColumnIfMissing(db, 'bills', 'customer_id', 'INTEGER REFERENCES customers(id)');
+    addColumnIfMissing(db, 'bills', 'customer_name', 'TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_bills_total ON bills(total)');
+  },
 ];
 
 function addColumnIfMissing(db, table, column, definition) {

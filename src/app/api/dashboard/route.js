@@ -1,123 +1,70 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-import { isValidDate } from '@/lib/date-utils';
+import { isValidDate, todayIST } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
-function getISTToday() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  return ist.toISOString().split('T')[0];
+// All period maths is done on plain YYYY-MM-DD calendar dates, so there are
+// no timezone off-by-one errors (the old code formatted IST dates with UTC
+// getters, which made every previous month lose its last day).
+function addDays(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
-function getISTMonday() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  const day = ist.getUTCDay();
-  const diff = day === 0 ? 6 : day - 1;
-  ist.setUTCDate(ist.getUTCDate() - diff);
-  return ist.toISOString().split('T')[0];
+function mondayOf(ymd) {
+  const day = new Date(ymd + 'T00:00:00Z').getUTCDay(); // 0 = Sunday
+  return addDays(ymd, day === 0 ? -6 : 1 - day);
 }
 
-function getISTMonthStart() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-01`;
+function monthStart(ymd) {
+  return ymd.slice(0, 7) + '-01';
 }
 
-function buildDateConditions(view, from, to) {
-  const conditions = [];
-  const params = [];
-  const hasCustomRange = Boolean(from || to);
+function monthEnd(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${ym}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
 
-  if (hasCustomRange) {
-    if (from) {
-      conditions.push('b.created_at >= ?');
-      params.push(`${from} 00:00:00`);
-    }
-    if (to) {
-      conditions.push('b.created_at <= ?');
-      params.push(`${to} 23:59:59`);
-    }
-  } else if (view === 'today') {
-    conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes')");
-  } else if (view === 'week') {
-    const monday = getISTMonday();
-    const today = getISTToday();
-    conditions.push('b.created_at >= ?');
-    params.push(`${monday} 00:00:00`);
-    conditions.push('b.created_at <= ?');
-    params.push(`${today} 23:59:59`);
-  } else if (view === 'month') {
-    const monthStart = getISTMonthStart();
-    const today = getISTToday();
-    conditions.push('b.created_at >= ?');
-    params.push(`${monthStart} 00:00:00`);
-    conditions.push('b.created_at <= ?');
-    params.push(`${today} 23:59:59`);
-  } else {
-    conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes')");
+// Current and comparison periods for a dashboard request.
+//   view=today  -> today vs yesterday
+//   view=week   -> this Monday..today vs the whole previous week
+//   view=month or month=YYYY-MM -> that month (up to today) vs the whole previous month
+//   from/to     -> that range vs the same number of days just before it
+function resolvePeriods({ view, from, to, month }) {
+  const today = todayIST();
+  if (from && to) {
+    const days = Math.round((new Date(to + 'T00:00:00Z') - new Date(from + 'T00:00:00Z')) / 86400000) + 1;
+    const prevTo = addDays(from, -1);
+    return { current: { from, to }, previous: { from: addDays(prevTo, -(days - 1)), to: prevTo } };
   }
-
-  return { conditions, params };
-}
-
-function fmtDate(d) {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function buildPreviousPeriodConditions(view, from, to) {
-  const conditions = [];
-  const params = [];
-  const hasCustomRange = Boolean(from && to);
-
-  if (hasCustomRange) {
-    const fromDate = new Date(from + 'T00:00:00+05:30');
-    const toDate = new Date(to + 'T23:59:59+05:30');
-    const durationMs = toDate.getTime() - fromDate.getTime();
-    const prevTo = new Date(fromDate.getTime() - 1);
-    const prevFrom = new Date(prevTo.getTime() - durationMs);
-    conditions.push('b.created_at >= ?');
-    params.push(`${fmtDate(prevFrom)} 00:00:00`);
-    conditions.push('b.created_at <= ?');
-    params.push(`${fmtDate(prevTo)} 23:59:59`);
-  } else if (view === 'today') {
-    conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes', '-1 day')");
-  } else if (view === 'week') {
-    const monday = getISTMonday();
-    const prevSunday = new Date(monday + 'T00:00:00+05:30');
-    prevSunday.setUTCDate(prevSunday.getUTCDate() - 1);
-    const prevMonday = new Date(prevSunday.getTime());
-    prevMonday.setUTCDate(prevMonday.getUTCDate() - 6);
-    conditions.push('b.created_at >= ?');
-    params.push(`${fmtDate(prevMonday)} 00:00:00`);
-    conditions.push('b.created_at <= ?');
-    params.push(`${fmtDate(prevSunday)} 23:59:59`);
-  } else if (view === 'month') {
-    const monthStart = getISTMonthStart();
-    const prevLastDay = new Date(monthStart + 'T00:00:00+05:30');
-    prevLastDay.setUTCDate(prevLastDay.getUTCDate() - 1);
-    const prevFirstDay = new Date(prevLastDay.getTime());
-    prevFirstDay.setUTCDate(1);
-    conditions.push('b.created_at >= ?');
-    params.push(`${fmtDate(prevFirstDay)} 00:00:00`);
-    conditions.push('b.created_at <= ?');
-    params.push(`${fmtDate(prevLastDay)} 23:59:59`);
-  } else {
-    conditions.push("date(b.created_at) = date('now', '+5 hours', '+30 minutes', '-1 day')");
+  if (month || view === 'month') {
+    const ym = month || today.slice(0, 7);
+    const end = monthEnd(ym) < today ? monthEnd(ym) : today;
+    const prevLast = addDays(`${ym}-01`, -1);
+    return { current: { from: `${ym}-01`, to: end }, previous: { from: monthStart(prevLast), to: prevLast } };
   }
+  if (view === 'week') {
+    const monday = mondayOf(today);
+    return { current: { from: monday, to: today }, previous: { from: addDays(monday, -7), to: addDays(monday, -1) } };
+  }
+  const yesterday = addDays(today, -1);
+  return { current: { from: today, to: today }, previous: { from: yesterday, to: yesterday } };
+}
 
-  return { conditions, params };
+function rangeConditions(range) {
+  return {
+    conditions: ['b.created_at >= ?', 'b.created_at <= ?'],
+    params: [`${range.from} 00:00:00`, `${range.to} 23:59:59`],
+  };
 }
 
 function runSummaryQuery(db, where, params) {
   const summary = db.prepare(`
     SELECT
-      COUNT(*) as total_bills,
+      COALESCE(SUM(CASE WHEN b.type = 'sale' THEN 1 ELSE 0 END), 0) as total_bills,
       COALESCE(SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END), 0) as net_revenue,
       COALESCE(SUM(CASE WHEN b.type = 'sale' THEN b.total ELSE 0 END), 0) as gross_revenue,
       COALESCE(SUM(CASE WHEN b.type = 'return' THEN b.total ELSE 0 END), 0) as total_returns,
@@ -143,9 +90,11 @@ function runSummaryQuery(db, where, params) {
   summary.upi_total = paymentSplit.upi_total;
   summary.card_total = paymentSplit.card_total;
   summary.total_revenue = summary.net_revenue;
+  // Average bill = what a typical sale was worth (returns don't make bills smaller).
+  summary.avg_bill = summary.sale_count > 0 ? summary.gross_revenue / summary.sale_count : 0;
 
   const totalItems = db.prepare(`
-    SELECT COALESCE(SUM(bi.quantity), 0) as total_items
+    SELECT COALESCE(SUM(CASE WHEN b.type = 'return' THEN -bi.quantity ELSE bi.quantity END), 0) as total_items
     FROM bill_items bi
     JOIN bills b ON bi.bill_id = b.id
     WHERE ${where}
@@ -169,6 +118,10 @@ export async function GET(request) {
     const view = isAdmin ? (searchParams.get('view') || 'today').toLowerCase() : 'today';
     const from = isAdmin ? searchParams.get('from') : null;
     const to = isAdmin ? searchParams.get('to') : null;
+    const month = isAdmin ? searchParams.get('month') : null;
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return NextResponse.json({ error: 'Month format galat hai (YYYY-MM)' }, { status: 400 });
+    }
 
     if (from && !isValidDate(from)) {
       return NextResponse.json({ error: 'From date format galat hai (YYYY-MM-DD)' }, { status: 400 });
@@ -182,7 +135,9 @@ export async function GET(request) {
 
     const db = getDb();
 
-    const { conditions: dateConditions, params: dateParams } = buildDateConditions(view, from, to);
+    // One of from/to without the other is treated as no custom range.
+    const periods = resolvePeriods({ view, from: from && to ? from : null, to: from && to ? to : null, month });
+    const { conditions: dateConditions, params: dateParams } = rangeConditions(periods.current);
     const baseConditions = [...dateConditions, 'b.deleted_at IS NULL'];
     const baseParams = [...dateParams];
 
@@ -190,7 +145,7 @@ export async function GET(request) {
 
     const summary = runSummaryQuery(db, baseWhere, baseParams);
 
-    const { conditions: prevConditions, params: prevParams } = buildPreviousPeriodConditions(view, from, to);
+    const { conditions: prevConditions, params: prevParams } = rangeConditions(periods.previous);
     const prevBaseConditions = [...prevConditions, 'b.deleted_at IS NULL'];
     const prevBaseParams = [...prevParams];
     const prevWhere = prevBaseConditions.join(' AND ');
@@ -201,20 +156,21 @@ export async function GET(request) {
         c.name as category_name,
         c.group_name,
         SUM(CASE WHEN b.type = 'return' THEN -bi.quantity ELSE bi.quantity END) as quantity,
-        SUM(CASE WHEN b.type = 'return' THEN -bi.amount ELSE bi.amount END) as revenue
+        SUM((CASE WHEN b.type = 'return' THEN -bi.amount ELSE bi.amount END)
+            * (CASE WHEN b.subtotal > 0 THEN b.total / b.subtotal ELSE 1 END)) as revenue
       FROM bill_items bi
       JOIN bills b ON bi.bill_id = b.id
       JOIN categories c ON bi.category_id = c.id
       WHERE ${baseWhere}
       GROUP BY c.id
-      HAVING revenue > 0
+      HAVING ABS(revenue) >= 0.01 OR quantity != 0
       ORDER BY revenue DESC
     `).all(...baseParams);
 
     const dailyTrend = db.prepare(`
       SELECT
         date(b.created_at) as date,
-        COUNT(*) as bills,
+        SUM(CASE WHEN b.type = 'sale' THEN 1 ELSE 0 END) as bills,
         SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END) as revenue
       FROM bills b
       WHERE ${baseWhere}
@@ -223,12 +179,12 @@ export async function GET(request) {
     `).all(...baseParams);
 
     let weeklyTrend = [];
-    if (view === 'month' || (from && to)) {
+    if (view === 'month' || month || (from && to)) {
       const weekRows = db.prepare(`
         SELECT
           date(b.created_at, 'weekday 0', '-6 days') as week_start,
           date(b.created_at, 'weekday 0') as week_end,
-          COUNT(*) as bills,
+          SUM(CASE WHEN b.type = 'sale' THEN 1 ELSE 0 END) as bills,
           SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END) as revenue
         FROM bills b
         WHERE ${baseWhere}
@@ -242,7 +198,7 @@ export async function GET(request) {
       SELECT
         b.salesman_id,
         u.name as salesman_name,
-        COUNT(b.id) as bills,
+        SUM(CASE WHEN b.type = 'sale' THEN 1 ELSE 0 END) as bills,
         COALESCE(SUM(CASE WHEN b.type = 'return' THEN -b.total ELSE b.total END), 0) as revenue
       FROM bills b
       JOIN users u ON b.salesman_id = u.id
@@ -253,7 +209,7 @@ export async function GET(request) {
 
     for (const s of salesmanBreakdown) {
       const itemCount = db.prepare(`
-        SELECT COALESCE(SUM(bi.quantity), 0) as items
+        SELECT COALESCE(SUM(CASE WHEN b.type = 'return' THEN -bi.quantity ELSE bi.quantity END), 0) as items
         FROM bill_items bi
         JOIN bills b ON bi.bill_id = b.id
         WHERE b.salesman_id = ? AND ${baseWhere}
@@ -262,6 +218,7 @@ export async function GET(request) {
     }
 
     return NextResponse.json({
+      period: periods,
       summary,
       previous_summary,
       categoryBreakdown,

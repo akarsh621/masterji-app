@@ -145,6 +145,9 @@ def build_receipt(job):
     salesman = job.get('salesman_name', '')
     if salesman:
         buf += encode('Salesman: {}\n'.format(salesman))
+    customer = job.get('customer_name') or ''
+    if customer:
+        buf += encode('Customer: {}\n'.format(customer[:30]))
     buf += LINE
 
     buf += encode('{:<24s}{:>6s}{:>12s}\n'.format('Item', 'Qty', 'Rs'))

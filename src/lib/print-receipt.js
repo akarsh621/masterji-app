@@ -114,6 +114,7 @@ export function buildReceiptHTML(bill) {
     <span style="font-size:13px">${escapeHtml(dateStr)}</span>
   </div>
   ${n.salesmanName ? `<div style="font-size:13px">Salesman: ${escapeHtml(n.salesmanName)}</div>` : ''}
+  ${bill.customer_name ? `<div style="font-size:13px">Customer: ${escapeHtml(bill.customer_name)}</div>` : ''}
   <div class="divider"></div>
 
   <!-- Items -->

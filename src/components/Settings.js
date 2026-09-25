@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
 import LoadError from '@/components/LoadError';
+import Customers from '@/components/Customers';
 
 const GROUP_LABELS = { women: 'Ladies', kids: 'Kids', men: 'Gents', other: 'Other' };
 
@@ -17,6 +18,7 @@ export default function Settings() {
         {[
           { id: 'team', label: 'Sales Team' },
           { id: 'categories', label: 'Categories' },
+          { id: 'customers', label: 'Customers' },
           { id: 'admin', label: 'Admin' },
         ].map(t => (
           <button
@@ -33,6 +35,7 @@ export default function Settings() {
 
       {tab === 'team' && <SalesTeamSettings />}
       {tab === 'categories' && <CategorySettings />}
+      {tab === 'customers' && <Customers />}
       {tab === 'admin' && <AdminSettings />}
     </div>
   );

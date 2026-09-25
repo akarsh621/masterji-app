@@ -128,8 +128,8 @@ export async function POST(request, { params }) {
 
     const insertBill = db.prepare(`
       INSERT INTO bills (bill_number, subtotal, discount_percent, discount_amount, total, payment_mode,
-                         salesman_id, notes, type, original_bill_id, client_request_id)
-      VALUES (?, ?, 0, 0, ?, ?, ?, ?, 'return', ?, ?)
+                         salesman_id, notes, type, original_bill_id, client_request_id, customer_id, customer_name)
+      VALUES (?, ?, 0, 0, ?, ?, ?, ?, 'return', ?, ?, ?, ?)
     `);
     const insertItem = db.prepare(
       'INSERT INTO bill_items (bill_id, category_id, mrp, quantity, amount, orig_bill_item_id) VALUES (?, ?, ?, ?, ?, ?)'
@@ -182,7 +182,8 @@ export async function POST(request, { params }) {
 
       const res = insertBill.run(
         billNumber, total, total, refundMode, originalBill.salesman_id,
-        `Return against ${originalBill.bill_number}`, id, clientRequestId
+        `Return against ${originalBill.bill_number}`, id, clientRequestId,
+        originalBill.customer_id, originalBill.customer_name // returns belong to the same customer
       );
       const billId = res.lastInsertRowid;
       for (const r of returnLines) {
