@@ -12,7 +12,10 @@ export async function PATCH(request, { params }) {
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const db = getDb();
 
     const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);

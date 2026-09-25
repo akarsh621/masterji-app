@@ -40,7 +40,10 @@ export async function POST(request) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const { name, group_name } = body;
 
     if (!name || !name.trim()) {

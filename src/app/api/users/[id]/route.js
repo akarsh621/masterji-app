@@ -20,7 +20,10 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'User ID galat hai' }, { status: 400 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const db = getDb();
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -49,18 +52,18 @@ export async function PATCH(request, { params }) {
       }
     }
 
-    if (body.name !== undefined) {
-      db.prepare('UPDATE users SET name = ? WHERE id = ?').run(nextName, userId);
-    }
+    // Validate everything first, then apply all changes in one transaction, so a
+    // bad PIN or password never leaves a half-updated user.
+    let nextPin = null;
     if (body.pin !== undefined && user.role === 'salesman') {
-      const nextPin = String(body.pin);
+      nextPin = String(body.pin);
       if (!PIN_REGEX.test(nextPin)) {
         return NextResponse.json({ error: 'PIN 4 digit ka hona chahiye' }, { status: 400 });
       }
-      db.prepare('UPDATE users SET pin = ? WHERE id = ?').run(nextPin, userId);
     }
+    let nextUsername = null;
     if (body.username !== undefined && user.role === 'admin') {
-      const nextUsername = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+      nextUsername = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
       if (!nextUsername || nextUsername.length < 3) {
         return NextResponse.json({ error: 'Username kam se kam 3 characters ka hona chahiye' }, { status: 400 });
       }
@@ -68,19 +71,23 @@ export async function PATCH(request, { params }) {
       if (existing) {
         return NextResponse.json({ error: 'Ye username pehle se kisi aur ka hai' }, { status: 400 });
       }
-      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(nextUsername, userId);
     }
+    let nextPasswordHash = null;
     if (body.password !== undefined && user.role === 'admin') {
       const nextPassword = typeof body.password === 'string' ? body.password : '';
       if (nextPassword.length < 4) {
         return NextResponse.json({ error: 'Password kam se kam 4 characters ka hona chahiye' }, { status: 400 });
       }
-      const hash = bcrypt.hashSync(nextPassword, 10);
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+      nextPasswordHash = bcrypt.hashSync(nextPassword, 10);
     }
-    if (body.active !== undefined) {
-      db.prepare('UPDATE users SET active = ? WHERE id = ?').run(body.active ? 1 : 0, userId);
-    }
+
+    db.transaction(() => {
+      if (body.name !== undefined) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(nextName, userId);
+      if (nextPin !== null) db.prepare('UPDATE users SET pin = ? WHERE id = ?').run(nextPin, userId);
+      if (nextUsername !== null) db.prepare('UPDATE users SET username = ? WHERE id = ?').run(nextUsername, userId);
+      if (nextPasswordHash !== null) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextPasswordHash, userId);
+      if (body.active !== undefined) db.prepare('UPDATE users SET active = ? WHERE id = ?').run(body.active ? 1 : 0, userId);
+    })();
 
     return NextResponse.json({ message: 'User update ho gaya' });
   } catch (err) {
@@ -115,10 +122,18 @@ export async function DELETE(request, { params }) {
       }
     }
 
-    const billCount = db.prepare('SELECT COUNT(*) as count FROM bills WHERE salesman_id = ?').get(userId);
-    if (billCount.count > 0) {
+    // Anyone with history (bills, cash-outs, expenses, print jobs) is deactivated,
+    // never deleted, so old records keep pointing at a real person.
+    const hasHistory = db.prepare(`
+      SELECT
+        EXISTS(SELECT 1 FROM bills WHERE salesman_id = ?) OR
+        EXISTS(SELECT 1 FROM cash_out WHERE recorded_by = ?) OR
+        EXISTS(SELECT 1 FROM expenses WHERE recorded_by = ?) OR
+        EXISTS(SELECT 1 FROM print_queue WHERE requested_by = ?) AS has
+    `).get(userId, userId, userId, userId).has;
+    if (hasHistory) {
       db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(userId);
-      return NextResponse.json({ message: 'User ke bills hain isliye deactivate kiya (delete nahi)' });
+      return NextResponse.json({ message: 'Is user ka purana record hai isliye deactivate kiya (delete nahi)' });
     }
 
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);

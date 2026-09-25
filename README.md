@@ -12,12 +12,15 @@ This app provides:
 - **Per-salesman sales tracking** via individual PIN-based logins, with on-bill salesman selector
 - **Real-time dashboard** with daily/weekly/monthly/custom analytics, category breakdowns (Ladies/Gents/Kids groups), salesman performance, daily and weekly trend charts, and period-over-period comparison
 - **Expense tracking & monthly P&L** (admin-only Earnings tab) -- enter stock purchases, salaries, utilities, other expenses per month; see revenue vs expenses, net profit, profit margin, and month-over-month comparison
-- **Returns/exchanges** with per-item return quantities and refund mode tracking
+- **Returns** matched to the exact bill line, refunded at what the customer actually paid (Cash or UPI, never Card); salesmen up to 7 days, admin any age
+- **Bill badlo** -- correct a saved bill in one step (old bill cancelled, new one linked, drawer moves only by the difference)
+- **Customers** -- optional mobile + name on a bill; admin Customers screen with visits, spend and CSV export
 - **Persistent cash drawer tracking** (Hisaab) -- every cash event updates the drawer balance in real-time; admin can manually correct if physical count differs; petty cash target tracking; daily sweep for end-of-day cash collection
 - **Print queue** for bill receipts -- "Print Bill" button queues to print agent; fallback browser print available
-- **Sales history (Bill Book)** with filtering by date, salesman, payment mode, and CSV export (compact items column)
+- **Sales history (Bill Book)** with filtering by date, salesman, payment mode, search across all dates (bill number, customer phone/name, amount), and CSV export
 - **Cash auto-rounding** on cash-only payments (floor to nearest 10)
-- **UPI as default payment mode** (reflecting common payment patterns)
+- **No default payment mode** -- the salesman must tap Cash / UPI / Card, so a forgotten tap can't misrecord a sale
+- **Bill drafts survive** tab switches, refresh, Back, and expired logins (kept on the phone, per user, for 12 hours)
 - **Admin panel** for managing salesmen, categories, and admin users
 
 The goal is to replace gut-feel decisions with data-driven ones: know what sells, who sells it, when it sells, and where discounts eat into margins.
@@ -50,11 +53,14 @@ app/
 │   │   │   ├── cash-drawer/     # drawer balance + petty cash
 │   │   │   ├── cash-out/        # cash-out recording (sweep, manual, expense, etc.)
 │   │   │   ├── categories/      # CRUD
+│   │   │   ├── customers/       # customer list, lookup by phone, CSV
 │   │   │   ├── dashboard/       # analytics aggregation
 │   │   │   ├── earnings/        # monthly P&L (revenue + expenses)
 │   │   │   ├── expenses/        # expense CRUD + labels autocomplete + copy
 │   │   │   ├── export/          # CSV download
 │   │   │   ├── hisaab/          # daily reconciliation summary
+│   │   │   ├── backup/          # consistent DB snapshot download (admin / print agent)
+│   │   │   ├── print-agent/     # serves agent files to update.py (agent token)
 │   │   │   ├── print-queue/     # print job management
 │   │   │   └── users/           # user management
 │   │   ├── globals.css          # Tailwind base styles + custom utilities
@@ -65,14 +71,16 @@ app/
 │   │   ├── BillPreview.js       # Bill item display (shared across screens)
 │   │   ├── CashOutForm.js       # Cash-out form (reusable)
 │   │   ├── CategoryBreakdown.js # Ladies/Gents/Kids category breakdown (reusable)
+│   │   ├── Customers.js         # Admin customer list + history (inside Settings)
 │   │   ├── Dashboard.js         # Admin analytics dashboard with trends + export
 │   │   ├── DayClose.js          # Daily cash reconciliation (Hisaab) with sweep + petty cash
 │   │   ├── DeltaBadge.js        # Period-over-period comparison badge (reusable)
 │   │   ├── Earnings.js          # Admin expense tracking & monthly P&L
+│   │   ├── LoadError.js         # Error message + retry button (reusable)
 │   │   ├── LoginPage.js         # PIN login (salesmen) / password login (admin)
 │   │   ├── NewBill.js           # Multi-step bill creation with salesman selector
-│   │   ├── SalesHistory.js      # Bill listing with filters, returns, void + re-create
-│   │   ├── Settings.js          # Admin CRUD for salesmen, categories, admins
+│   │   ├── SalesHistory.js      # Bill listing with search, filters, returns, Bill badlo, cancel
+│   │   ├── Settings.js          # Admin CRUD for salesmen, categories, admins, customers
 │   │   └── TodaySummary.js      # Salesman's today-at-a-glance view
 │   ├── context/
 │   │   └── auth.js              # AuthProvider + useAuth hook (JWT in localStorage)
@@ -80,12 +88,16 @@ app/
 │       ├── api-client.js        # Frontend fetch wrapper with auth headers
 │       ├── auth.js              # JWT sign/verify, requireAuth/requireAdmin middleware
 │       ├── bill-data.js         # Bill normalization utilities
-│       ├── print-receipt.js     # Browser-based receipt printing with shop branding + QR
+│       ├── bill-draft.js        # In-progress bill saved on the phone (localStorage)
+│       ├── date-utils.js        # IST dates and month helpers
+│       ├── login-limits.js      # Login rate limiting
+│       ├── phone.js             # Indian mobile number normalisation
+│       ├── print-receipt.js     # Browser-based receipt printing (HTML-escaped) with review QR
 │       ├── ui-utils.js          # Shared constants (reason labels, group labels/colors)
 │       └── db/
-│           ├── index.js         # SQLite connection singleton, migrations, auto-seed
-│           ├── schema.sql       # Database schema (CREATE TABLE statements)
-│           └── seed.js          # Seed script: creates DB, inserts default users + categories
+│           ├── index.js         # The one schema definition: tables, migrations, auto-seed
+│           └── seed.js          # Resets a LOCAL database (refuses on Railway)
+├── tests/                       # Integration tests (npm test), node:test, no extra deps
 ├── .ai/
 │   └── APP_RULES.md             # Development rulebook (UX philosophy, data integrity)
 ├── next.config.js               # better-sqlite3 externalized for server
@@ -131,8 +143,13 @@ Nine tables, all timestamps in IST (UTC+5:30 via SQLite offset). Migrations mana
 | discount_amount | REAL | Total discount from MRP (includes item-level + bill-level + cash round-off) |
 | total | REAL | Final amount after all discounts |
 | payment_mode | TEXT | `cash`, `upi`, `card`, or `mixed` |
-| salesman_id | INTEGER FK | Who created the bill |
+| salesman_id | INTEGER FK | Who the sale is credited to (returns: the original bill's salesman) |
 | notes | TEXT | Optional free text |
+| is_backdated | INTEGER | 1 = entered for an earlier date; never touches the cash drawer |
+| client_request_id | TEXT | Unique per save attempt, so a retried save never makes a second bill |
+| replaces_bill_id | INTEGER FK | Set on a Bill badlo replacement, pointing at the cancelled bill |
+| customer_id | INTEGER FK | Household (phone number), nullable |
+| customer_name | TEXT | Name as typed on this bill |
 | deleted_at | DATETIME | Soft delete timestamp (NULL = active) |
 
 ### `bill_items`
@@ -144,6 +161,17 @@ Nine tables, all timestamps in IST (UTC+5:30 via SQLite offset). Migrations mana
 | quantity | INTEGER | Number of pieces (> 0) |
 | amount | REAL | Selling price x quantity (after item-level discount) |
 | cost_price | REAL | Reserved for future cost tracking (nullable) |
+| orig_bill_item_id | INTEGER FK | On return lines: the sale line being returned |
+
+### `customers`
+| Column | Type | Notes |
+|--------|------|-------|
+| phone | TEXT UNIQUE | Normalised 10-digit mobile -- one per household |
+| name | TEXT | Latest known name |
+| first_seen_at / last_seen_at | DATETIME | Visit range |
+
+### `login_attempts`
+Failed logins per account and IP, used to lock out PIN guessing for 15 minutes.
 
 ### `bill_payments`
 | Column | Type | Notes |
@@ -201,21 +229,24 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 | POST | `/api/auth/login` | Public | Login (admin: username+password, salesman: id+pin) |
 | GET | `/api/auth/me` | Bearer | Current user info + DB mode |
 | GET | `/api/auth/salesmen` | Public | List active salesmen names (for login screen + selectors) |
-| POST | `/api/bills` | Bearer | Create bill with items + payments array |
-| GET | `/api/bills` | Bearer | List bills (paginated, filtered) -- all-store data for all users |
+| POST | `/api/bills` | Bearer | Create bill with items + payments array. `replaces_bill_id` = Bill badlo |
+| GET | `/api/bills` | Bearer | List bills (paginated, filtered, `?q=` search across all dates) -- any date for all users |
 | DELETE | `/api/bills/:id` | Bearer | Soft-delete (admin: any time; salesman: own bills within 15 min) |
-| POST | `/api/bills/:id/return` | Admin | Create return bill against an existing sale |
+| POST | `/api/bills/:id/return` | Bearer | Return specific lines (salesman: bills up to 7 days old; refund Cash/UPI) |
 | GET | `/api/categories` | Bearer | List categories (grouped). `?all=true` includes inactive. |
 | POST | `/api/categories` | Admin | Add new category |
 | PATCH | `/api/categories/:id` | Admin | Update category name/group/active |
-| GET | `/api/dashboard` | Bearer | Analytics. `?view=today\|week\|month` or `?from=&to=`. All-store data. |
+| GET | `/api/dashboard` | Bearer | Analytics. `?view=today\|week\|month`, `?month=YYYY-MM` or `?from=&to=`. Salesmen: today only. |
+| GET | `/api/customers` | Admin | Customer list with visits/spend; `?id=` for one customer's bills; `?format=csv` |
+| GET | `/api/customers/lookup` | Bearer | Look up a phone number while billing |
+| GET | `/api/backup` | Admin/Agent | Download a consistent copy of the database |
 | GET | `/api/export` | Admin | CSV download. Optional `?from=&to=`. Compact items column. |
-| GET | `/api/hisaab` | Bearer | Daily reconciliation: drawer balance, petty cash, today's cash flow |
+| GET | `/api/hisaab` | Admin | Daily reconciliation: drawer balance, petty cash, today's cash flow |
 | GET | `/api/cash-drawer` | Bearer | Current cash drawer + petty cash target |
 | PUT | `/api/cash-drawer` | Admin | Manually correct drawer balance |
 | PATCH | `/api/cash-drawer` | Admin | Update petty cash target |
-| POST | `/api/cash-out` | Bearer | Record cash leaving the drawer (auto-updates drawer) |
-| GET | `/api/cash-out` | Bearer | List cash-out entries. `?from=&to=` for date filtering. |
+| POST | `/api/cash-out` | Admin | Record cash leaving the drawer (auto-updates drawer) |
+| GET | `/api/cash-out` | Admin | List cash-out entries. `?from=&to=` for date filtering. |
 | GET | `/api/earnings` | Admin | Monthly P&L (revenue from bills + expense totals + computed metrics + previous month delta) |
 | GET | `/api/expenses` | Admin | List expenses for `?month=YYYY-MM` with category totals |
 | POST | `/api/expenses` | Admin | Create expense entry |
@@ -224,18 +255,19 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 | GET | `/api/expenses/labels` | Admin | Autocomplete: last 10 unique labels for `?category=` |
 | POST | `/api/expenses/copy` | Admin | Copy all expenses from one month to another |
 | POST | `/api/print-queue` | Bearer | Queue a bill for printing |
-| GET | `/api/print-queue` | Bearer/Agent | Fetch pending print jobs |
-| PATCH | `/api/print-queue/:id` | Bearer/Agent | Update print job status |
+| GET | `/api/print-queue` | Admin/Agent | Fetch pending print jobs |
+| PATCH | `/api/print-queue/:id` | Admin/Agent | Update print job status |
+| GET | `/api/print-agent/files/:name` | Agent | `agent.py`, `update.py`, `start.bat` for `update.bat` |
 | GET | `/api/users` | Admin | List all users |
 | POST | `/api/users` | Admin | Create admin or salesman |
-| PATCH | `/api/users/:id` | Admin | Update name/pin/active |
-| DELETE | `/api/users/:id` | Admin | Delete user (deactivates if bills exist) |
+| PATCH | `/api/users/:id` | Admin | Update name/pin/active (all-or-nothing) |
+| DELETE | `/api/users/:id` | Admin | Delete user (deactivates instead if they have any bills, cash-outs, expenses or print jobs) |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22 LTS (pinned in package.json `engines`)
 - npm
 
 ### Setup
@@ -299,13 +331,13 @@ Admin has 5 bottom tabs + Settings in the header:
 | **Earnings** | Monthly P&L: revenue vs expenses, profit margin, expense management |
 | **Hisaab** | Cash drawer balance, petty cash, daily sweep, manual cash-out |
 | **Bill Book** | Bill history with search, filter, void, return, print |
-| **⚙ Settings** (header) | Manage salesmen, categories, admin users |
+| **⚙ Settings** (header) | Manage salesmen, categories, admin users, customers |
 
 Salesmen have 3 tabs: **Naya Bill**, **Aaj** (today summary), **Bill Book**.
 
 ## UI Language
 
-The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-savvy salesmen in the shop. Examples: "Naya Bill Banao", "Category chuno", "Bill Save Karo".
+The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-savvy salesmen in the shop. English for technical and common terms (Cash, MRP, Discount, Net Profit, Return); Hinglish only for casual phrases and short instructions ("Naya Bill Banao", "Category chuno", "Payment mode chuno").
 
 ## Key Design Decisions
 
@@ -313,15 +345,18 @@ The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-s
 |----------|-----------|
 | SQLite (not Postgres/MySQL) | Single-file DB, zero setup, perfect for local single-shop deployment |
 | PIN login for salesmen | Speed -- no typing usernames, just tap name + 4 digits |
-| UPI as default payment mode | Reflects real-world usage patterns at the shop |
+| No default payment mode | A pre-selected mode let forgotten taps record cash sales as UPI |
+| No UPI QR on screen | Payments are verified on the shop's POS machines; the QR flow was never used |
 | MRP + Discount % input model | Matches how shop negotiation works: start from tag price, offer discount |
 | Tappable editable prices in item list | Salesmen can adjust final selling price after adding; discount recalculates |
 | Cash auto-rounding (floor to nearest 10) | Common retail practice; subtle "₹X round off" indicator shown |
 | Split payments via `bill_payments` table | Captures exact cash/UPI/card split per bill for accurate drawer reconciliation |
-| Discount stored as percentage | Consistent analytics even when discount is entered as a final price |
+| Discount amount is authoritative | The stored percentage is derived from it, so the two never disagree |
 | Soft delete for bills | Preserve historical data integrity; deleted bills excluded from analytics |
 | On-bill salesman selector | Any user can reassign a bill to a different salesman before saving |
-| All-store data for salesmen | Aaj and Bill Book tabs show all-store data (not just own) for cross-verification |
+| Salesmen: today's figures, any-date bills | Aaj shows today only; Bill Book (records, not analytics) shows any date |
+| Corrections are cancel + reissue | A saved bill is never edited in place; Bill badlo links old and new |
+| Drafts on the phone, not the server | Fast, works when the connection drops, keeps half-built bills out of the DB |
 | Category-first billing flow | Prevents wrong-category mistakes; no auto-select on load, no auto-keyboard |
 | Persistent cash drawer (not daily calculation) | Single `app_state.cash_drawer` value updated atomically by every cash event |
 | Petty cash + daily sweep | Separates sale cash collection from operational petty cash left in drawer |

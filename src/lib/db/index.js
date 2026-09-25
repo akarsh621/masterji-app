@@ -117,7 +117,7 @@ const DEFAULT_CATEGORIES = [
 const MIGRATIONS = [
   // v1: Add petty_cash_target to app_state
   (db) => {
-    try { db.exec("ALTER TABLE app_state ADD COLUMN petty_cash_target REAL NOT NULL DEFAULT 1000"); } catch {}
+    addColumnIfMissing(db, 'app_state', 'petty_cash_target', 'REAL NOT NULL DEFAULT 1000');
   },
   // v2: Add sweep/manual to cash_out CHECK constraint (legacy, kept for version tracking)
   (db) => {
@@ -141,7 +141,7 @@ const MIGRATIONS = [
   },
   // v3: Add cost_price to bill_items
   (db) => {
-    try { db.exec("ALTER TABLE bill_items ADD COLUMN cost_price REAL DEFAULT NULL CHECK(cost_price >= 0)"); } catch {}
+    addColumnIfMissing(db, 'bill_items', 'cost_price', 'REAL DEFAULT NULL CHECK(cost_price >= 0)');
   },
   // v4: Add expenses table
   (db) => {
@@ -159,8 +159,8 @@ const MIGRATIONS = [
   },
   // v5: Add mrp_total to bills and mrp to bill_items (missing on legacy prod DBs)
   (db) => {
-    try { db.exec("ALTER TABLE bills ADD COLUMN mrp_total REAL DEFAULT 0"); } catch {}
-    try { db.exec("ALTER TABLE bill_items ADD COLUMN mrp REAL CHECK(mrp > 0)"); } catch {}
+    addColumnIfMissing(db, 'bills', 'mrp_total', 'REAL DEFAULT 0');
+    addColumnIfMissing(db, 'bill_items', 'mrp', 'REAL CHECK(mrp > 0)');
     db.exec(`UPDATE bills SET mrp_total = (
       SELECT COALESCE(SUM(bi.mrp * bi.quantity), 0) FROM bill_items bi WHERE bi.bill_id = bills.id AND bi.mrp IS NOT NULL
     ) WHERE mrp_total = 0 OR mrp_total IS NULL`);
@@ -181,9 +181,9 @@ const MIGRATIONS = [
   },
   // v7: Add audit columns to upi_accounts (created_by, updated_by, updated_at)
   (db) => {
-    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN created_by INTEGER REFERENCES users(id)"); } catch {}
-    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_by INTEGER REFERENCES users(id)"); } catch {}
-    try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_at DATETIME"); } catch {}
+    addColumnIfMissing(db, 'upi_accounts', 'created_by', 'INTEGER REFERENCES users(id)');
+    addColumnIfMissing(db, 'upi_accounts', 'updated_by', 'INTEGER REFERENCES users(id)');
+    addColumnIfMissing(db, 'upi_accounts', 'updated_at', 'DATETIME');
   },
   // v8: Money integrity -- backdated flag, duplicate-request protection,
   // line-level return matching, and bill correction links.
@@ -269,7 +269,7 @@ function backfillReturnLineLinks(db) {
 }
 
 function runMigrations(db) {
-  try { db.exec("ALTER TABLE app_state ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 0"); } catch {}
+  addColumnIfMissing(db, 'app_state', 'schema_version', 'INTEGER NOT NULL DEFAULT 0');
 
   let current = 0;
   try {

@@ -1,36 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/context/auth';
 import { api } from '@/lib/api-client';
 import LoadError from '@/components/LoadError';
-import CashOutForm from './CashOutForm';
 import DeltaBadge from '@/components/DeltaBadge';
-import { getISTDateInputValue, REASON_LABELS, formatRupees } from '@/lib/ui-utils';
+import { formatRupees } from '@/lib/ui-utils';
 import CategoryBreakdown from '@/components/CategoryBreakdown';
 
-function formatTime(value) {
-  if (!value || typeof value !== 'string') return '';
-  const parsed = new Date(value.replace(' ', 'T') + '+05:30');
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
-  });
-}
-
 export default function TodaySummary() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [cashOutEntries, setCashOutEntries] = useState([]);
-
-  const fetchCashOutEntries = () => {
-    const today = getISTDateInputValue();
-    api.getCashOut({ from: today, to: today })
-      .then(d => setCashOutEntries(d.entries || []))
-      .catch(() => {});
-  };
 
   const [loadError, setLoadError] = useState('');
 
@@ -40,7 +19,6 @@ export default function TodaySummary() {
       .then(d => { setData(d); setLoadError(''); })
       .catch(err => setLoadError(err.message))
       .finally(() => setLoading(false));
-    if (isAdmin) fetchCashOutEntries();
   };
 
   useEffect(() => {
@@ -118,30 +96,6 @@ export default function TodaySummary() {
           <div className="text-lg font-bold text-orange-600">-₹{Math.round(summary.total_discount).toLocaleString('en-IN')}</div>
           <div className="text-xs text-gray-500 mt-1">
             Total Discount Diya{summary.total_mrp > 0 && ` (${Math.round((summary.total_discount / summary.total_mrp) * 100)}% off MRP)`}
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="mb-4">
-          <CashOutForm onSuccess={fetchData} />
-        </div>
-      )}
-
-      {isAdmin && cashOutEntries.length > 0 && (
-        <div className="card mb-4">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Aaj ke Cash Out</h3>
-          <div className="space-y-2">
-            {cashOutEntries.map(entry => (
-              <div key={entry.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-                <div>
-                  <span className="text-sm font-medium">{REASON_LABELS[entry.reason] || entry.reason}</span>
-                  {entry.note && <span className="text-xs text-gray-400 ml-2">— {entry.note}</span>}
-                  <div className="text-xs text-gray-400">{entry.recorded_by_name} · {formatTime(entry.created_at)}</div>
-                </div>
-                <span className="text-sm font-bold text-red-600">-₹{Math.round(entry.amount).toLocaleString('en-IN')}</span>
-              </div>
-            ))}
           </div>
         </div>
       )}

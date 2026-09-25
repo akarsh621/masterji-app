@@ -96,10 +96,15 @@ These rules were learned through real feedback from salesmen using the app. Foll
 Financial data accuracy is non-negotiable. A bug that miscalculates a bill amount will erode trust and kill adoption.
 
 - All cash mutations (sale with cash, cash refund, bill void, cash-out) update `app_state.cash_drawer` inside the **same database transaction** as the primary operation
-- Discount is always stored as a percentage in the backend, even when entered as a final price in the UI -- this ensures consistent analytics
+- `discount_amount` is authoritative (including 0); the stored `discount_percent` is derived from it so the two never disagree
 - Bills are soft-deleted (timestamped), never hard-deleted -- historical data must survive
-- Salesmen with existing bills are deactivated, not deleted -- referential integrity
-- The backend derives `discount_amount` from `discount_percent` if the frontend doesn't send it -- belt and suspenders
+- Users with any history (bills, cash-outs, expenses, print jobs) are deactivated, not deleted -- referential integrity
+- Backdated bills (`is_backdated = 1`) never touch the cash drawer -- not when saved, cancelled, or corrected
+- A refund never exceeds what the customer paid for that line (after bill discount and round-off); refunds are Cash or UPI, never Card
+- Returns are matched to the exact sale line (`orig_bill_item_id`) and credited to the original bill's salesman
+- A saved bill is never edited in place. Corrections are Bill badlo: cancel + reissue in one transaction, old and new linked
+- Every money-changing POST carries a `client_request_id`, so a retried request never records twice
+- Returns are not bills: bill counts and Avg Bill use sale bills only, and Dashboard and Earnings must agree
 - Individual payment entries in `bill_payments` only allow `cash`, `upi`, `card` -- never `mixed` (that's the bill-level aggregate mode)
 
 ---
@@ -119,18 +124,23 @@ Financial data accuracy is non-negotiable. A bug that miscalculates a bill amoun
 - All API routes that use `request.headers` must export `const dynamic = 'force-dynamic'` to prevent Next.js static rendering issues on Railway
 
 ### Testing
+- `npm test` must pass before committing. Every money bug gets a regression test that fails before the fix
 - Test on mobile viewport (420px width) -- that's the real usage environment
 - After any UI change, verify: keyboard behavior, scroll position, tap target size
 - After any API/DB change, verify: discount math, cash drawer updates, payment validation
 
 ### What NOT to do
 - Don't add features not explicitly requested -- resist feature creep
-- Don't add English-only labels -- keep everything Hinglish
+- Don't over-translate: English for technical and common terms (Cash, MRP, Discount, Net Profit, Return), Hinglish only for casual phrases and short instructions
+- Don't redesign screens that work -- fix what's broken, keep familiar layouts and wording
+- Don't pre-select a payment mode
+- Don't keep bill drafts on the server -- they live in `localStorage` on the phone
 - Don't use `autoFocus` on page/component load
 - Don't pre-select categories on billing screen load
 - Don't use symbols where words work better (Hatao > ×, Cancel karo > Delete)
 - Don't install new dependencies without a strong reason
-- Don't touch prod database during development
+- Don't touch prod database during development, and never run `seed.js` against it
+- Don't add `schema.sql` back -- `src/lib/db/index.js` is the single schema definition
 
 ---
 
@@ -142,6 +152,8 @@ Financial data accuracy is non-negotiable. A bug that miscalculates a bill amoun
 - **Schema**: `bill_items` has `mrp` column for per-item MRP tracking
 - **Auth**: PIN-based for salesmen, username/password for admin, JWT tokens
 - **Cash tracking**: Persistent `cash_drawer` in `app_state`, updated atomically
+- **Customers**: optional phone (one per household) + name typed on the bill; admin Customers screen
+- **Safety net**: integration tests (`npm test`), nightly DB backup pulled by the print agent, login rate limiting
 
 ---
 
@@ -150,7 +162,6 @@ Financial data accuracy is non-negotiable. A bug that miscalculates a bill amoun
 These have been analyzed and documented in `DEFERRED_FEATURES.md`:
 
 - WhatsApp bill sharing
-- Customer phone number capture
 - Employee attendance (in/out time)
 - Stock/inventory tracking
 - Period-over-period comparison UI enhancements

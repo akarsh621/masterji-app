@@ -6,6 +6,7 @@ import { api, newRequestId } from '@/lib/api-client';
 import { loadDraft, saveDraft, clearDraft } from '@/lib/bill-draft';
 import LoadError from '@/components/LoadError';
 import { normalizePhone, isValidPhone } from '@/lib/phone';
+import { todayIST } from '@/lib/date-utils';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 
@@ -37,17 +38,6 @@ const PAYMENT_MODES = [
 ];
 
 const BACKDATE_MAX_DAYS = 30;
-
-function todayISTYmd() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const y = parts.find(p => p.type === 'year')?.value;
-  const m = parts.find(p => p.type === 'month')?.value;
-  const d = parts.find(p => p.type === 'day')?.value;
-  return `${y}-${m}-${d}`;
-}
 
 function ymdOffsetDays(baseYmd, deltaDays) {
   const base = new Date(baseYmd + 'T00:00:00Z');
@@ -417,7 +407,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
       if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
       }
-      if (!replacesBill && backdateValue && backdateValue !== todayISTYmd()) {
+      if (!replacesBill && backdateValue && backdateValue !== todayIST()) {
         billPayload.bill_date = backdateValue;
       }
       const result = await api.createBill(billPayload);
@@ -879,13 +869,13 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
               <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="date"
-                  value={backdateValue || todayISTYmd()}
-                  min={ymdOffsetDays(todayISTYmd(), -BACKDATE_MAX_DAYS)}
-                  max={todayISTYmd()}
+                  value={backdateValue || todayIST()}
+                  min={ymdOffsetDays(todayIST(), -BACKDATE_MAX_DAYS)}
+                  max={todayIST()}
                   onChange={(e) => setBackdateValue(e.target.value)}
                   className="input text-sm"
                 />
-                {backdateValue && backdateValue !== todayISTYmd() && (
+                {backdateValue && backdateValue !== todayIST() && (
                   <span className="px-2 py-1 rounded-md bg-amber-100 text-amber-800 text-xs font-semibold">
                     Backdated: {formatBackdateLabel(backdateValue)}
                   </span>

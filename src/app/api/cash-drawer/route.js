@@ -28,7 +28,10 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Sirf admin cash drawer set kar sakta hai' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const amount = Number(body?.amount);
     if (!Number.isFinite(amount) || amount < 0) {
       return NextResponse.json({ error: 'Amount 0 ya usse zyada hona chahiye' }, { status: 400 });
@@ -54,7 +57,10 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Sirf admin petty cash target set kar sakta hai' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const amount = Number(body?.petty_cash_target);
     if (!Number.isFinite(amount) || amount < 0) {
       return NextResponse.json({ error: 'Petty cash target 0 ya usse zyada hona chahiye' }, { status: 400 });

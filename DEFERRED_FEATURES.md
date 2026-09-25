@@ -42,7 +42,9 @@ Thank you! Visit again.
 
 ---
 
-## 2. Customer Phone Number
+## 2. Customer Phone Number -- BUILT
+
+> Built in Project 1 (September 2026) as a `customers` table (one row per phone = household) plus `bills.customer_id` and `bills.customer_name`, with lookup while billing and an admin Customers screen. The notes below are the original analysis.
 
 **What:** Optional phone number field on bill creation.
 

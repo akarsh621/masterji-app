@@ -1,6 +1,6 @@
 # Changelist -- Master Ji Fashion House App
 
-Last updated: 2026-04-08
+Last updated: 2026-09-25
 
 This document lists every change made with step-by-step test instructions for QA handoff.
 
@@ -508,6 +508,52 @@ This document lists every change made with step-by-step test instructions for QA
 
 ### How to test
 - Read the file, verify it matches the app's current behavior
+
+---
+
+## 23. Project 1 -- Hardening + Enhancements (September 2026)
+
+### What changed
+**Safety net**
+- Integration tests: `npm test` starts its own server on a throwaway database (money, returns, Bill badlo, security, customers, reports, backup, print agent, users)
+- `GET /api/backup` + nightly backup pulled by the print agent to the shop PC (keeps 30 days)
+- Production refuses to start with an empty database instead of auto-creating default logins; `seed.js` refuses on Railway and never deletes without `--force`; `schema.sql` retired
+- `railway.json` pins build/start and a health check; Node 22
+
+**Money correctness**
+- Returns matched to the exact sale line, refunded at what the customer paid, Cash (default) or UPI only; salesmen up to 7 days, admin any age; credited to the original salesman
+- Cancelling a backdated bill no longer moves the drawer; a bill with an active return can't be cancelled
+- Split payment >= total is blocked instead of booking everything as one mode; no default payment mode
+- Retried saves never create duplicate bills, cash-outs or returns
+- Hisaab: cash refunds and cancelled earlier bills shown as their own lines; drawer correction only writes what changed
+
+**Security**
+- Login rate limiting (per salesman + phone, per phone, per account); receipts HTML-escaped; CSP and security headers
+- Cash-out and Hisaab admin-only; salesmen see today's figures only (Bill Book still any date)
+- UPI QR flow removed (payments are verified on the POS machines); static review QR on receipts
+- Print agent updates come from the Railway app (`update.bat`), not GitHub
+
+**Counter**
+- Bill drafts survive tab switch, refresh, Back, logout prompt and expired login (per user, 12 hours)
+- Clear error messages with a retry button everywhere; 20s timeouts
+- Final Price: tap the Total, pick a round-off amount, one "₹X se ₹Y kam kiya" line
+- Bill Book: "Return" (was "Return / Exchange"), quieter Cancel Bill, one-step **Bill badlo**
+- Bigger Hatao and ± buttons; pinch-zoom allowed; installable icons
+
+**New**
+- Optional customer mobile + name on bills, lookup while billing, admin Customers screen with CSV
+- Bill Book search across all dates: bill number, phone, name, amount
+- Dashboard month scroller; Dashboard and Earnings agree; Avg Bill excludes returns; categories add up to net revenue
+
+**Code health**
+- Every route `force-dynamic`; malformed JSON gives 400; user edits are all-or-nothing; deleting a user with any history deactivates them
+
+### How to test
+1. `npm test` -- all tests pass
+2. `npm run dev`, 420px wide: start a bill, switch tabs, refresh, press Back -- the bill is still there
+3. Payment screen: nothing selected; Save shows "Payment mode chuno"
+4. Return one line of a discounted bill -- refund equals that line's share of what was paid; Card is not offered
+5. Bill badlo a ₹960 cash bill to ₹900 cash -- drawer moves by exactly -₹60, old and new bills link to each other
 
 ---
 

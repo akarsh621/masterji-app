@@ -18,7 +18,10 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Expense nahi mila' }, { status: 404 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const updates = [];
     const values = [];
 

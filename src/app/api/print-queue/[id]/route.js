@@ -12,7 +12,11 @@ export async function PATCH(request, { params }) {
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const { id } = await params;
-    const { status } = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
+    const { status } = body;
 
     if (!status || !VALID_STATUSES.has(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });

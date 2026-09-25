@@ -11,7 +11,12 @@ export async function POST(request) {
     const result = requireAdmin(request);
     if (result.error) return NextResponse.json({ error: result.error }, { status: result.status });
 
-    const { from_month, to_month } = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
+
+    const { from_month, to_month } = body;
 
     if (!from_month || !MONTH_REGEX.test(from_month)) {
       return NextResponse.json({ error: 'from_month YYYY-MM format mein hona chahiye' }, { status: 400 });

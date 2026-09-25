@@ -15,7 +15,10 @@ export async function POST(request) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
     const amount = Number(body?.amount);
     const reason = body?.reason;
     const note = typeof body?.note === 'string' ? body.note.trim() : '';

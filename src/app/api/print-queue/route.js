@@ -9,7 +9,12 @@ export async function POST(request) {
     const auth = requireAuth(request);
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-    const { bill_id } = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
+    }
+
+    const { bill_id } = body;
     if (!bill_id) {
       return NextResponse.json({ error: 'bill_id zaroori hai' }, { status: 400 });
     }
