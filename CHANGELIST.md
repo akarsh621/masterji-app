@@ -547,6 +547,7 @@ This document lists every change made with step-by-step test instructions for QA
 
 **Code health**
 - Every route `force-dynamic`; malformed JSON gives 400; user edits are all-or-nothing; deleting a user with any history deactivates them
+- Migration v12: returns made before the fix are credited to the original bill's salesman
 
 ### How to test
 1. `npm test` -- all tests pass

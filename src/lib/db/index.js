@@ -234,6 +234,18 @@ const MIGRATIONS = [
     db.exec('CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_bills_total ON bills(total)');
   },
+  // v12: Returns made before v8 were credited to whoever processed them, so one
+  // salesman's return reduced another's sales. Credit each to the salesman of
+  // the bill it returned, as new returns already are.
+  (db) => {
+    db.exec(`
+      UPDATE bills
+      SET salesman_id = (SELECT o.salesman_id FROM bills o WHERE o.id = bills.original_bill_id)
+      WHERE type = 'return'
+        AND original_bill_id IS NOT NULL
+        AND salesman_id != (SELECT o.salesman_id FROM bills o WHERE o.id = bills.original_bill_id)
+    `);
+  },
 ];
 
 function addColumnIfMissing(db, table, column, definition) {
