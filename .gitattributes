@@ -1,0 +1,2 @@
+# Windows batch files for the shop PC must keep CRLF line endings byte-for-byte.
+print-agent/*.bat -text

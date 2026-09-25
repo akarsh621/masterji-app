@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb, getISTNow, updateCashDrawer } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function DELETE(request, { params }) {
   try {
     const result = requireAuth(request);
@@ -43,16 +45,41 @@ export async function DELETE(request, { params }) {
     const payments = db.prepare('SELECT * FROM bill_payments WHERE bill_id = ?').all(id);
 
     const voidBill = db.transaction(() => {
-      db.prepare('UPDATE bills SET deleted_at = ? WHERE id = ?').run(getISTNow(), id);
+      // Re-checked inside the transaction so two voids can't both reverse cash.
+      const changed = db.prepare('UPDATE bills SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').run(getISTNow(), id);
+      if (changed.changes === 0) return false;
 
-      const cashAmount = payments
-        .filter(p => p.mode === 'cash')
-        .reduce((s, p) => s + p.amount, 0);
-      if (cashAmount > 0) {
-        updateCashDrawer(db, bill.type === 'return' ? cashAmount : -cashAmount);
+      // Backdated bills never added cash to the drawer, so voiding one must not
+      // take any out.
+      if (!bill.is_backdated) {
+        const cashAmount = payments
+          .filter(p => p.mode === 'cash')
+          .reduce((s, p) => s + p.amount, 0);
+        if (cashAmount > 0) {
+          updateCashDrawer(db, bill.type === 'return' ? cashAmount : -cashAmount);
+        }
       }
+
+      // A cancelled bill must never come out of the printer.
+      db.prepare("UPDATE print_queue SET status = 'failed' WHERE bill_id = ? AND status = 'pending'").run(id);
+      return true;
     });
-    voidBill();
+
+    if (bill.type === 'sale') {
+      const activeReturn = db.prepare(
+        "SELECT bill_number FROM bills WHERE original_bill_id = ? AND type = 'return' AND deleted_at IS NULL"
+      ).get(id);
+      if (activeReturn) {
+        return NextResponse.json(
+          { error: `Is bill ka return (${activeReturn.bill_number}) hua hai — pehle woh return cancel karo` },
+          { status: 409 }
+        );
+      }
+    }
+
+    if (!voidBill()) {
+      return NextResponse.json({ error: 'Bill pehle hi cancel ho chuka hai' }, { status: 404 });
+    }
 
     return NextResponse.json({
       message: `Bill ${bill.bill_number} void ho gaya`,

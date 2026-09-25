@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, getISTNow } from '@/lib/db';
-import { requireAuth, requireAuthOrAgent } from '@/lib/auth';
+import { requireAuth, requireAdminOrAgent } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +33,7 @@ export async function POST(request) {
 
 export async function GET(request) {
   try {
-    const auth = requireAuthOrAgent(request);
+    const auth = requireAdminOrAgent(request);
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const { searchParams } = new URL(request.url);
@@ -42,9 +42,11 @@ export async function GET(request) {
     const db = getDb();
 
     if (status === 'pending') {
+      // Expire stale jobs: 'pending' ones nobody picked up, and 'printing' ones
+      // left behind when the agent crashed mid-job.
       db.prepare(`
         UPDATE print_queue SET status = 'failed'
-        WHERE status = 'pending'
+        WHERE status IN ('pending', 'printing')
         AND created_at < datetime('now', '+5 hours', '+30 minutes', '-10 minutes')
       `).run();
     }
@@ -60,6 +62,7 @@ export async function GET(request) {
       JOIN users s ON s.id = b.salesman_id
       LEFT JOIN users u ON u.id = pq.requested_by
       WHERE pq.status = ?
+        AND (pq.status != 'pending' OR b.deleted_at IS NULL)
       ORDER BY pq.created_at ASC
       LIMIT 50
     `).all(status);
@@ -121,7 +124,7 @@ export async function GET(request) {
 
 export async function DELETE(request) {
   try {
-    const auth = requireAuthOrAgent(request);
+    const auth = requireAdminOrAgent(request);
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const db = getDb();

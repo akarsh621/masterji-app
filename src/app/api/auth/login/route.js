@@ -2,29 +2,51 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { signToken } from '@/lib/auth';
+import { clientIp, isLocked, recordFailure, recordSuccess, LOCKED_MESSAGE } from '@/lib/login-limits';
+
+export const dynamic = 'force-dynamic';
 
 const PIN_REGEX = /^\d{4}$/;
+// Compared against when the username doesn't exist, so response time doesn't
+// reveal which admin usernames are real.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
+
+function loginResponse(user) {
+  return NextResponse.json({
+    token: signToken(user),
+    user: { id: user.id, name: user.name, role: user.role },
+  });
+}
 
 export async function POST(request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
     const db = getDb();
+    const ip = clientIp(request);
+
+    // Runs one login attempt with lockout accounting around it.
+    const attempt = (account, check) => {
+      if (isLocked(db, account, ip)) {
+        return NextResponse.json({ error: LOCKED_MESSAGE }, { status: 429 });
+      }
+      const outcome = check();
+      if (outcome.user) {
+        recordSuccess(db, account, ip);
+        return loginResponse(outcome.user);
+      }
+      recordFailure(db, account, ip);
+      return NextResponse.json({ error: outcome.error }, { status: outcome.status || 401 });
+    };
 
     const username = typeof body?.username === 'string' ? body.username.trim() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     if (username && password) {
-      const user = db.prepare(
-        'SELECT * FROM users WHERE username = ? AND role = ? AND active = 1'
-      ).get(username, 'admin');
-
-      if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-        return NextResponse.json({ error: 'Galat username ya password' }, { status: 401 });
-      }
-
-      const token = signToken(user);
-      return NextResponse.json({
-        token,
-        user: { id: user.id, name: user.name, role: user.role }
+      return attempt(`admin:${username.toLowerCase()}`, () => {
+        const user = db.prepare(
+          'SELECT * FROM users WHERE username = ? AND role = ? AND active = 1'
+        ).get(username, 'admin');
+        const ok = bcrypt.compareSync(password, user?.password_hash || DUMMY_HASH);
+        return user && ok ? { user } : { error: 'Galat username ya password' };
       });
     }
 
@@ -38,39 +60,23 @@ export async function POST(request) {
       if (!Number.isInteger(salesmanId) || salesmanId <= 0) {
         return NextResponse.json({ error: 'Salesman select karo' }, { status: 400 });
       }
-
-      const user = db.prepare(
-        'SELECT * FROM users WHERE id = ? AND pin = ? AND role = ? AND active = 1'
-      ).get(salesmanId, pin, 'salesman');
-
-      if (!user) {
-        return NextResponse.json({ error: 'Galat salesman ya PIN' }, { status: 401 });
-      }
-
-      const token = signToken(user);
-      return NextResponse.json({
-        token,
-        user: { id: user.id, name: user.name, role: user.role }
+      return attempt(`salesman:${salesmanId}`, () => {
+        const user = db.prepare(
+          'SELECT * FROM users WHERE id = ? AND pin = ? AND role = ? AND active = 1'
+        ).get(salesmanId, pin, 'salesman');
+        return user ? { user } : { error: 'Galat salesman ya PIN' };
       });
     }
 
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
     if (name && pin) {
-      const users = db.prepare(
-        'SELECT * FROM users WHERE name = ? AND pin = ? AND role = ? AND active = 1'
-      ).all(name, pin, 'salesman');
-
-      if (users.length === 0) {
-        return NextResponse.json({ error: 'Galat naam ya PIN' }, { status: 401 });
-      }
-      if (users.length > 1) {
-        return NextResponse.json({ error: 'Is naam ke multiple log mile, admin se check karwao' }, { status: 400 });
-      }
-
-      const token = signToken(users[0]);
-      return NextResponse.json({
-        token,
-        user: { id: users[0].id, name: users[0].name, role: users[0].role }
+      return attempt(`name:${name.toLowerCase()}`, () => {
+        const users = db.prepare(
+          'SELECT * FROM users WHERE name = ? AND pin = ? AND role = ? AND active = 1'
+        ).all(name, pin, 'salesman');
+        if (users.length === 1) return { user: users[0] };
+        if (users.length > 1) return { error: 'Is naam ke multiple log mile, admin se check karwao', status: 400 };
+        return { error: 'Galat naam ya PIN' };
       });
     }
 

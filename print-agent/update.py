@@ -1,11 +1,13 @@
 """
-Downloads the latest agent.py from GitHub.
-Backs up current agent.py before overwriting.
+Downloads the latest print agent files from the Master Ji app on Railway.
+Uses the server URL and agent_token from config.ini, so it works even though
+the GitHub repo is private. Backs up each file before overwriting.
 Does NOT touch config.ini (shop-specific).
 """
 import os
 import sys
 import shutil
+import configparser
 
 try:
     import requests
@@ -13,26 +15,35 @@ except ImportError:
     print('[ERROR] requests not installed. Run: pip install requests')
     sys.exit(1)
 
-REPO_RAW = 'https://raw.githubusercontent.com/akarsh621/masterji-app/main/print-agent'
-FILES_TO_UPDATE = ['agent.py']
+FILES_TO_UPDATE = ['agent.py', 'update.py', 'start.bat']
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-def update_file(filename):
-    url = '{}/{}'.format(REPO_RAW, filename)
+def load_server():
+    config_path = os.path.join(script_dir, 'config.ini')
+    if not os.path.exists(config_path):
+        print('[ERROR] config.ini not found. Run install.bat first.')
+        sys.exit(1)
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    return config.get('server', 'url').rstrip('/'), config.get('server', 'agent_token')
+
+
+def update_file(base_url, token, filename):
+    url = '{}/api/print-agent/files/{}'.format(base_url, filename)
     local_path = os.path.join(script_dir, filename)
     backup_path = local_path + '.bak'
 
     print('Downloading {}...'.format(filename))
     try:
-        resp = requests.get(url, timeout=30)
-        if resp.status_code == 404:
-            print('[ERROR] File not found. Is the repo public?')
+        resp = requests.get(url, headers={'X-Print-Agent-Token': token}, timeout=30)
+        if resp.status_code in (401, 403):
+            print('[ERROR] Server refused the agent token. Check agent_token in config.ini.')
             return False
         resp.raise_for_status()
     except requests.exceptions.ConnectionError:
-        print('[ERROR] Cannot reach GitHub. Check internet connection.')
+        print('[ERROR] Cannot reach the server. Check internet connection.')
         return False
     except Exception as e:
         print('[ERROR] Failed: {}'.format(e))
@@ -45,7 +56,7 @@ def update_file(filename):
     with open(local_path, 'wb') as f:
         f.write(resp.content)
 
-    print('  Updated successfully!')
+    print('  Updated.')
     return True
 
 
@@ -55,14 +66,15 @@ def main():
     print('=' * 40)
     print()
 
+    base_url, token = load_server()
     ok = 0
     for f in FILES_TO_UPDATE:
-        if update_file(f):
+        if update_file(base_url, token, f):
             ok += 1
 
     print()
     if ok == len(FILES_TO_UPDATE):
-        print('[OK] All files updated. Restart the agent to use the new version.')
+        print('[OK] All files updated. Close the agent window and run start.bat again.')
     else:
         print('[WARN] Some files failed. Check errors above.')
 

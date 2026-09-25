@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth';
-import { api } from '@/lib/api-client';
+import { api, newRequestId } from '@/lib/api-client';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 import { normalizeSavedBill } from '@/lib/bill-data';
@@ -72,6 +72,10 @@ export default function SalesHistory({ onVoidAndRecreate }) {
   const [returnBillId, setReturnBillId] = useState(null);
   const [returnItems, setReturnItems] = useState([]);
   const [returnMode, setReturnMode] = useState('cash');
+  // Share of the line price the customer actually paid (after any bill-level
+  // discount / round-off). Refunds are worked out at this same share.
+  const [returnPaidShare, setReturnPaidShare] = useState(1);
+  const [returnRequestId, setReturnRequestId] = useState(null);
   const [returnError, setReturnError] = useState('');
   const [returning, setReturning] = useState(false);
   const [printStatuses, setPrintStatuses] = useState({});
@@ -150,7 +154,13 @@ export default function SalesHistory({ onVoidAndRecreate }) {
 
   const startReturn = (bill) => {
     setReturnBillId(bill.id);
-    setReturnItems(bill.items.map(i => ({ ...i, returnQty: 0 })));
+    setReturnItems(bill.items.map(i => ({
+      ...i,
+      returnQty: 0,
+      maxQty: Math.max(0, i.quantity - (i.returned_qty || 0)),
+    })));
+    setReturnPaidShare(bill.subtotal > 0 ? bill.total / bill.subtotal : 1);
+    setReturnRequestId(newRequestId());
     setReturnMode('cash');
     setReturnError('');
   };
@@ -165,12 +175,9 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     setReturnError('');
     try {
       await api.returnBill(returnBillId, {
-        items: returningItems.map(i => ({
-          category_id: i.category_id,
-          quantity: i.returnQty,
-          amount: Math.round((i.amount / i.quantity) * i.returnQty * 100) / 100,
-        })),
+        items: returningItems.map(i => ({ bill_item_id: i.id, quantity: i.returnQty })),
         refund_mode: returnMode,
+        client_request_id: returnRequestId,
       });
       setReturnBillId(null);
       setReturnItems([]);
@@ -379,20 +386,22 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                     {returnError && <p className="text-xs text-red-600 mb-2">{returnError}</p>}
                     {returnItems.map((item, i) => (
                       <div key={i} className="flex items-center justify-between py-1.5">
-                        <span className="text-sm">{item.category_name} (max {item.quantity})</span>
+                        <span className={`text-sm ${item.maxQty === 0 ? 'text-gray-400' : ''}`}>
+                          {item.category_name} {item.maxQty === 0 ? '(return ho chuka)' : `(max ${item.maxQty})`}
+                        </span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setReturnItems(prev => prev.map((it, idx) =>
                               idx === i ? { ...it, returnQty: Math.max(0, it.returnQty - 1) } : it
                             ))}
-                            className="w-7 h-7 rounded bg-gray-200 text-sm font-bold"
+                            className="w-10 h-10 rounded-lg bg-gray-200 text-base font-bold"
                           >-</button>
                           <span className="text-sm font-medium w-6 text-center">{item.returnQty}</span>
                           <button
                             onClick={() => setReturnItems(prev => prev.map((it, idx) =>
-                              idx === i ? { ...it, returnQty: Math.min(it.quantity, it.returnQty + 1) } : it
+                              idx === i ? { ...it, returnQty: Math.min(it.maxQty, it.returnQty + 1) } : it
                             ))}
-                            className="w-7 h-7 rounded bg-gray-200 text-sm font-bold"
+                            className="w-10 h-10 rounded-lg bg-gray-200 text-base font-bold"
                           >+</button>
                         </div>
                       </div>
@@ -400,7 +409,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                     <div className="mt-2">
                       <label className="text-xs text-gray-500">Refund kaise?</label>
                       <div className="flex gap-2 mt-1">
-                        {['cash', 'upi', 'card'].map(m => (
+                        {['cash', 'upi'].map(m => (
                           <button
                             key={m}
                             onClick={() => setReturnMode(m)}
@@ -416,7 +425,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                     {returnItems.some(i => i.returnQty > 0) && (
                       <p className="text-sm font-medium text-orange-700 mt-2">
                         Refund: ₹{Math.round(returnItems.reduce((s, i) =>
-                          s + (i.returnQty > 0 ? (i.amount / i.quantity) * i.returnQty : 0), 0
+                          s + (i.returnQty > 0 ? (i.amount / i.quantity) * i.returnQty * returnPaidShare : 0), 0
                         ))}
                       </p>
                     )}

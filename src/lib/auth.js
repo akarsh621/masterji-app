@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { getDb } from './db';
 
@@ -17,7 +18,7 @@ export function signToken(user) {
 
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     return null;
   }
@@ -56,13 +57,22 @@ export function requireAdmin(request) {
 }
 
 const PRINT_AGENT_TOKEN = process.env.PRINT_AGENT_TOKEN || '';
+const AGENT_USER = { id: 0, name: 'PrintAgent', role: 'agent' };
+
+function isAgentRequest(request) {
+  if (!PRINT_AGENT_TOKEN) return false;
+  const header = request.headers.get('x-print-agent-token') || '';
+  const a = Buffer.from(header);
+  const b = Buffer.from(PRINT_AGENT_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 export function requireAuthOrAgent(request) {
-  if (PRINT_AGENT_TOKEN) {
-    const agentHeader = request.headers.get('x-print-agent-token');
-    if (agentHeader === PRINT_AGENT_TOKEN) {
-      return { user: { id: 0, name: 'PrintAgent', role: 'agent' } };
-    }
-  }
+  if (isAgentRequest(request)) return { user: AGENT_USER };
   return requireAuth(request);
+}
+
+export function requireAdminOrAgent(request) {
+  if (isAgentRequest(request)) return { user: AGENT_USER };
+  return requireAdmin(request);
 }

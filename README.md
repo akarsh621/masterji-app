@@ -241,22 +241,20 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 ### Setup
 
 ```bash
-cd app
-
-# Install dependencies
+# Install dependencies (Node 22 LTS)
 npm install
 
-# Seed the database (creates data/masterji.db with default users and categories)
-npm run seed
+# Create .env.local with a JWT secret
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env.local
 
-# Start development server (uses dev database)
+# Start development server (uses the dev database, auto-seeded with local test users)
 npm run dev
 
-# Or start with production database
-npm run prod
+# Run the integration tests (starts its own server on a throwaway database)
+npm test
 ```
 
-The app runs at **http://localhost:3000**.
+The app runs at **http://localhost:3000**. The dev database's test users are printed in the server log the first time it is created.
 
 ### Dev vs Prod Database
 
@@ -265,23 +263,20 @@ Two separate SQLite files so testing/demoing never touches real data:
 | | Prod | Dev |
 |--|------|-----|
 | DB file | `data/masterji.db` | `data/masterji_dev.db` |
-| Seed | `npm run seed` | `npm run seed:dev` |
 | Start server | `npm run prod` | `npm run dev` |
+| Reset | never — see below | `npm run seed:dev -- --force` |
 | Env var | `DB_MODE` not set (default) | `DB_MODE=dev` (set by script) |
 | UI indicator | None | Amber "DEV MODE" banner at top |
 
-Both databases are fully independent. You can seed dev repeatedly without affecting prod. Migrations run automatically on server start via `schema_version` tracking.
+Both databases are fully independent. Migrations run automatically on server start via `schema_version` tracking.
 
-### Default Credentials
-
-| Role | Login | Credential |
-|------|-------|------------|
-| Admin | Username: `admin` | Password: `admin123` |
-| Salesman 1 | Select name on login screen | PIN: `1111` |
-| Salesman 2 | Select name on login screen | PIN: `2222` |
-| Salesman 3 | Select name on login screen | PIN: `3333` |
+**The production database is never auto-seeded.** If production starts with no users (usually a missing Railway volume or wrong `DATA_DIR`), the app refuses to start instead of creating a fresh database. For a genuinely new install, set `ADMIN_INITIAL_PASSWORD` for the first start only. `seed.js` refuses to run on Railway and never deletes an existing database without `--force`.
 
 Admin username, password, and name can be changed from **Settings > Admin > Edit**. Salesman names and PINs can be changed from **Settings > Sales Team > Edit**.
+
+### Backups
+
+`GET /api/backup` (admin, or the print agent token) downloads a complete, self-contained copy of the database. The print agent on the shop PC saves one copy a day into its `backups` folder and keeps the last 30. To restore, stop the app and replace `masterji.db` on the volume with a backup file.
 
 ### Accessing from Phone (Local Network)
 
@@ -291,7 +286,7 @@ Admin username, password, and name can be changed from **Settings > Admin > Edit
 
 ### Deployment (Railway)
 
-The app is deployed to Railway with a persistent volume for the SQLite database. Auto-seed runs on first start. See Railway dashboard for volume and environment variable configuration.
+The app is deployed to Railway with a persistent volume for the SQLite database (`DATA_DIR` must point at the volume). Required variables: `JWT_SECRET`, `DATA_DIR`, `PRINT_AGENT_TOKEN`. Build and start commands are pinned in `railway.json`.
 
 ## Admin Navigation
 

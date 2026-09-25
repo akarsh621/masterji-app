@@ -50,10 +50,10 @@ This document lists every change made with step-by-step test instructions for QA
 ### How to test
 
 **Single payment:**
-1. Login as salesman (PIN: 1111), create a bill with any items
+1. Login as a salesman on the dev database, create a bill with any items
 2. UPI is selected by default -- save bill
 3. Check Bill Book -- bill shows UPI
-4. Check Dashboard (admin login: admin/admin123) -- UPI total includes this amount
+4. Check Dashboard (as admin) -- UPI total includes this amount
 
 **Split payment:**
 1. Create a bill totaling e.g. Rs 1000
@@ -513,12 +513,7 @@ This document lists every change made with step-by-step test instructions for QA
 
 ## Login Credentials (for QA)
 
-| Role | Username/PIN | Password |
-|------|-------------|----------|
-| Admin | admin | admin123 |
-| Salesman 1 | PIN: 1111 | -- |
-| Salesman 2 | PIN: 2222 | -- |
-| Salesman 3 | PIN: 3333 | -- |
+Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.
 
 ## Quick Start
 

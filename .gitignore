@@ -3,3 +3,7 @@ node_modules/
 data/
 .env.local
 masterji_dev.db
+.next-test/
+print-agent/config.ini
+print-agent/backups/
+.next-prodcheck/

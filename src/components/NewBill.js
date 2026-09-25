@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth';
-import { api } from '@/lib/api-client';
+import { api, newRequestId } from '@/lib/api-client';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 
@@ -87,14 +87,11 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [backdateOpen, setBackdateOpen] = useState(false);
   const [backdateValue, setBackdateValue] = useState('');
 
-  const [primaryMode, setPrimaryMode] = useState('upi');
+  const [primaryMode, setPrimaryMode] = useState(null);
+  const [paymentModeMissing, setPaymentModeMissing] = useState(false);
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitMode, setSplitMode] = useState('upi');
   const [splitAmount, setSplitAmount] = useState('');
-  const [upiAccounts, setUpiAccounts] = useState([]);
-  const [selectedUpiAccountId, setSelectedUpiAccountId] = useState(null);
-  const [showQR, setShowQR] = useState(false);
-  const [qrBlobUrl, setQrBlobUrl] = useState(null);
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState('none');
   const [notes, setNotes] = useState('');
@@ -104,6 +101,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [printStatus, setPrintStatus] = useState(null);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
+  // One id per version of this bill: a plain retry reuses it (so a lost
+  // response can't create a duplicate); any edit to the bill gets a fresh one.
+  const billRequestId = useRef(newRequestId());
 
   useEffect(() => {
     api.getCategories().then(d => {
@@ -121,12 +121,6 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       if (!isAdmin && user?.id) {
         setSelectedSalesmanId(user.id);
       }
-    }).catch(() => {});
-    api.getUpiAccounts().then(d => {
-      const list = d.accounts || [];
-      setUpiAccounts(list);
-      const def = list.find(a => a.is_default) || list[0];
-      if (def) setSelectedUpiAccountId(def.id);
     }).catch(() => {});
   }, []);
 
@@ -224,66 +218,18 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const displayTotal = isCashOnly ? cashRounded : total;
   const cashRoundOff = isCashOnly ? total - cashRounded : 0;
 
-  // UPI portion of the payment (handles primary/split combinations)
-  let upiAmount = 0;
-  if (splitEnabled && splitAmount) {
-    const splitAmt = parseFloat(splitAmount) || 0;
-    if (splitAmt > 0 && splitAmt < total) {
-      if (primaryMode === 'upi') upiAmount = Math.round((total - splitAmt) * 100) / 100;
-      else if (splitMode === 'upi') upiAmount = Math.round(splitAmt * 100) / 100;
-    } else if (primaryMode === 'upi') {
-      upiAmount = displayTotal;
-    }
-  } else if (primaryMode === 'upi') {
-    upiAmount = displayTotal;
-  }
-  const activeUpiAccounts = upiAccounts.filter(a => a.active);
-  const selectedUpiAccount = activeUpiAccounts.find(a => a.id === selectedUpiAccountId) || activeUpiAccounts[0];
-  const canShowQR = upiAmount > 0 && activeUpiAccounts.length > 0;
-
   useEffect(() => {
-    if (!showQR || !canShowQR || !selectedUpiAccount || upiAmount <= 0) {
-      setQrBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-      return;
-    }
-    let cancelled = false;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('masterji_token') : null;
-    fetch(`/api/upi-qr?account_id=${selectedUpiAccount.id}&amount=${upiAmount.toFixed(2)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(r => {
-        if (!r.ok) throw new Error(`QR fetch failed: ${r.status}`);
-        return r.blob();
-      })
-      .then(blob => {
-        if (cancelled) return;
-        setQrBlobUrl(prev => {
-          if (prev) URL.revokeObjectURL(prev);
-          return URL.createObjectURL(blob);
-        });
-      })
-      .catch(err => {
-        console.error('QR fetch error:', err);
-        if (!cancelled) setQrBlobUrl(null);
-      });
-    return () => { cancelled = true; };
-  }, [showQR, canShowQR, selectedUpiAccount?.id, upiAmount]);
+    billRequestId.current = newRequestId();
+  }, [items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue]);
 
-  // Cleanup blob URL on unmount
-  useEffect(() => () => { if (qrBlobUrl) URL.revokeObjectURL(qrBlobUrl); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!canShowQR && showQR) setShowQR(false);
-  }, [canShowQR, showQR]);
+  const splitAmountNumber = Math.round((parseFloat(splitAmount) || 0) * 100) / 100;
+  const splitInvalid = splitEnabled && splitAmount !== '' && (splitAmountNumber <= 0 || splitAmountNumber >= total);
 
   const buildPayments = () => {
     if (!splitEnabled || !splitAmount) {
       return [{ mode: primaryMode, amount: displayTotal }];
     }
-    const splitAmt = Math.round(parseFloat(splitAmount) * 100) / 100;
-    if (splitAmt <= 0 || splitAmt >= total) {
-      return [{ mode: primaryMode, amount: displayTotal }];
-    }
+    const splitAmt = splitAmountNumber;
     const primaryAmt = Math.round((total - splitAmt) * 100) / 100;
     return [
       { mode: primaryMode, amount: primaryAmt },
@@ -293,6 +239,14 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
   const submitBill = async () => {
     if (items.length === 0 || submitLock.current) return;
+    if (!primaryMode) {
+      setPaymentModeMissing(true);
+      return;
+    }
+    if (splitInvalid) {
+      setError(`Split amount ₹${total} se kam hona chahiye`);
+      return;
+    }
     submitLock.current = true;
     setSubmitting(true);
     setError('');
@@ -310,6 +264,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         discount_percent: billDiscountPercent,
         discount_amount: billDiscountAmount + cashRoundOff,
         notes,
+        client_request_id: billRequestId.current,
       };
       if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
@@ -324,12 +279,12 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       setDiscountMode('none');
       setNotes('');
       setShowNotes(false);
-      setPrimaryMode('upi');
+      setPrimaryMode(null);
+      setPaymentModeMissing(false);
       setSplitEnabled(false);
       setSplitAmount('');
       setBackdateValue('');
       setBackdateOpen(false);
-      setShowQR(false);
       setScreen('items');
     } catch (err) {
       setError(err.message);
@@ -888,6 +843,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
               key={pm.id}
               onClick={() => {
                 setPrimaryMode(pm.id);
+                setPaymentModeMissing(false);
                 if (splitEnabled && splitMode === pm.id) {
                   const alt = PAYMENT_MODES.find(m => m.id !== pm.id);
                   setSplitMode(alt.id);
@@ -903,66 +859,8 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
             </button>
           ))}
         </div>
-
-        {/* UPI QR */}
-        {canShowQR && (
-          <div className="space-y-2">
-            <button
-              onClick={() => setShowQR(v => !v)}
-              className={`w-full py-2 rounded-full text-sm font-medium transition-colors ${
-                showQR
-                  ? 'border border-purple-300 bg-purple-50 text-red-600'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {showQR
-                ? '✕ QR Hatao'
-                : `📱 UPI QR Dikhao${splitEnabled && splitAmount ? ` (₹${upiAmount.toLocaleString('en-IN')})` : ''}`}
-            </button>
-
-            {showQR && selectedUpiAccount && (
-              <div className="p-3 bg-white border border-purple-200 rounded-lg space-y-3">
-                {activeUpiAccounts.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {activeUpiAccounts.map(a => (
-                      <button
-                        key={a.id}
-                        onClick={() => setSelectedUpiAccountId(a.id)}
-                        className={`flex-1 min-w-[120px] py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                          selectedUpiAccountId === a.id
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex justify-center min-h-[256px] items-center">
-                  {qrBlobUrl ? (
-                    <img src={qrBlobUrl} alt="UPI QR" width={256} height={256} className="rounded-md" />
-                  ) : (
-                    <div className="text-sm text-gray-400">QR load ho raha hai...</div>
-                  )}
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900">
-                    ₹{upiAmount.toLocaleString('en-IN')}
-                  </div>
-                  <div className="text-sm text-gray-600 mt-0.5">
-                    {selectedUpiAccount.payee_name} ko bhejenge
-                  </div>
-                  <div className="text-xs text-gray-400 break-all">
-                    {selectedUpiAccount.upi_id}
-                  </div>
-                </div>
-                <div className="text-xs text-center text-gray-500 px-2">
-                  Customer scan karke pay karega. Paisa aane ke baad Bill Done dabao.
-                </div>
-              </div>
-            )}
-          </div>
+        {paymentModeMissing && (
+          <p className="text-sm font-medium text-red-600 text-center">Payment mode chuno</p>
         )}
 
         {/* Split + Note (compact chip row) */}

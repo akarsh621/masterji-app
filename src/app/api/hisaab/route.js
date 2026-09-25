@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getDb, getCashDrawer, getPettyCashTarget } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
-    const result = requireAuth(request);
+    const result = requireAdmin(request);
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { api } from '@/lib/api-client';
+import { useState, useRef, useEffect } from 'react';
+import { api, newRequestId } from '@/lib/api-client';
 
 export default function CashOutForm({ onSuccess }) {
   const [showManual, setShowManual] = useState(false);
@@ -9,6 +9,9 @@ export default function CashOutForm({ onSuccess }) {
   const [manualNote, setManualNote] = useState('');
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // Same entry retried after a lost response is recorded once; any edit gets a new id.
+  const requestId = useRef(newRequestId());
+  useEffect(() => { requestId.current = newRequestId(); }, [manualAmount, manualNote]);
 
   const handleManual = async (e) => {
     e.preventDefault();
@@ -18,7 +21,7 @@ export default function CashOutForm({ onSuccess }) {
     setManualSubmitting(true);
     setError('');
     try {
-      await api.createCashOut({ amount: amt, reason: 'manual', note: manualNote.trim() });
+      await api.createCashOut({ amount: amt, reason: 'manual', note: manualNote.trim(), client_request_id: requestId.current });
       setShowManual(false);
       setManualAmount('');
       setManualNote('');

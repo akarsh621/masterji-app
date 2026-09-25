@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth';
-import { api } from '@/lib/api-client';
+import { api, newRequestId } from '@/lib/api-client';
 import CashOutForm from './CashOutForm';
 import { REASON_LABELS } from '@/lib/ui-utils';
 
@@ -28,12 +28,18 @@ export default function DayClose() {
   const [sweepInput, setSweepInput] = useState('');
   const [sweepSubmitting, setSweepSubmitting] = useState(false);
 
+  // Value the drawer box was filled with, so Save only writes the drawer when
+  // the admin actually changed it (never overwrite it with a stale/rounded copy).
+  const loadedDrawerInput = useRef('');
+  const sweepRequestId = useRef(newRequestId());
+
   const fetchData = () => {
     setLoading(true);
     api.getHisaab()
       .then(d => {
         setData(d);
         setDrawerInput(String(Math.round(d.cash_drawer)));
+        loadedDrawerInput.current = String(Math.round(d.cash_drawer));
         setPettyInput(String(Math.round(d.petty_cash_target)));
       })
       .catch(() => {})
@@ -48,7 +54,9 @@ export default function DayClose() {
     if (!Number.isFinite(drawerAmt) || drawerAmt < 0) return;
     if (!Number.isFinite(pettyAmt) || pettyAmt < 0) return;
     try {
-      await api.setCashDrawer(drawerAmt);
+      if (drawerInput !== loadedDrawerInput.current) {
+        await api.setCashDrawer(drawerAmt);
+      }
       await api.setPettyCashTarget(pettyAmt);
       setEditing(false);
       fetchData();
@@ -71,7 +79,8 @@ export default function DayClose() {
     if (!amt || amt <= 0) return;
     setSweepSubmitting(true);
     try {
-      await api.createCashOut({ amount: amt, reason: 'sweep', note: 'Daily sweep' });
+      await api.createCashOut({ amount: amt, reason: 'sweep', note: 'Daily sweep', client_request_id: sweepRequestId.current });
+      sweepRequestId.current = newRequestId();
       setSweeping(false);
       setSweepInput('');
       fetchData();

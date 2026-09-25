@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb, updateCashDrawer } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
+
+export const dynamic = 'force-dynamic';
 
 const VALID_REASONS = new Set(['expense', 'supplier', 'owner', 'other', 'sweep', 'manual']);
 const REASON_LABELS = { expense: 'Kharcha', supplier: 'Supplier Payment', owner: 'Owner Withdrawal', other: 'Other', sweep: 'Daily Sweep', manual: 'Manual Cash Out' };
@@ -8,7 +10,7 @@ const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(request) {
   try {
-    const result = requireAuth(request);
+    const result = requireAdmin(request);
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
@@ -27,19 +29,44 @@ export async function POST(request) {
     if (reason === 'sweep' && result.user.role !== 'admin') {
       return NextResponse.json({ error: 'Sirf admin sweep kar sakta hai' }, { status: 403 });
     }
+    if (note.length > 500) {
+      return NextResponse.json({ error: 'Note 500 characters se chhota rakho' }, { status: 400 });
+    }
     if (reason === 'manual' && !note) {
       return NextResponse.json({ error: 'Cash out mein note zaroori hai' }, { status: 400 });
     }
 
     const db = getDb();
+    const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
+    const findExisting = () => clientRequestId
+      ? db.prepare('SELECT id, amount, reason FROM cash_out WHERE client_request_id = ?').get(clientRequestId)
+      : null;
+    const existingResponse = (row) => NextResponse.json({
+      message: 'Cash out pehle hi record ho chuka hai',
+      id: row.id,
+      amount: row.amount,
+      reason: REASON_LABELS[row.reason] || row.reason,
+      duplicate: true,
+    }, { status: 200 });
+
+    const already = findExisting();
+    if (already) return existingResponse(already);
+
     const recordCashOut = db.transaction(() => {
       const info = db.prepare(
-        'INSERT INTO cash_out (amount, reason, note, recorded_by) VALUES (?, ?, ?, ?)'
-      ).run(amount, reason, note || null, result.user.id);
+        'INSERT INTO cash_out (amount, reason, note, recorded_by, client_request_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(amount, reason, note || null, result.user.id, clientRequestId);
       updateCashDrawer(db, -amount);
       return info;
     });
-    const info = recordCashOut();
+    let info;
+    try {
+      info = recordCashOut();
+    } catch (err) {
+      const existing = String(err?.message || '').includes('cash_out.client_request_id') && findExisting();
+      if (existing) return existingResponse(existing);
+      throw err;
+    }
 
     return NextResponse.json({
       message: 'Cash out record ho gaya',
@@ -56,7 +83,7 @@ export async function POST(request) {
 
 export async function GET(request) {
   try {
-    const result = requireAuth(request);
+    const result = requireAdmin(request);
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }

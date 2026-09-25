@@ -3,6 +3,8 @@ import { getDb } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { isValidDate } from '@/lib/date-utils';
 
+export const dynamic = 'force-dynamic';
+
 function getISTToday() {
   const now = new Date();
   const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
@@ -162,9 +164,11 @@ export async function GET(request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const view = (searchParams.get('view') || 'today').toLowerCase();
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
+    // Salesmen see today's sales figures only (their Aaj tab); any other range is admin-only.
+    const isAdmin = result.user.role === 'admin';
+    const view = isAdmin ? (searchParams.get('view') || 'today').toLowerCase() : 'today';
+    const from = isAdmin ? searchParams.get('from') : null;
+    const to = isAdmin ? searchParams.get('to') : null;
 
     if (from && !isValidDate(from)) {
       return NextResponse.json({ error: 'From date format galat hai (YYYY-MM-DD)' }, { status: 400 });

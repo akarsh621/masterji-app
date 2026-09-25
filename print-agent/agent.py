@@ -11,6 +11,7 @@ import os
 import subprocess
 import configparser
 import requests
+from html import escape as html_escape
 
 try:
     import win32print
@@ -66,6 +67,9 @@ LINE = b'-' * LINE_WIDTH + b'\n'
 DOUBLE_LINE = b'=' * LINE_WIDTH + b'\n'
 
 def encode(text):
+    # Drop control characters (except newline) so text from a bill -- e.g. a
+    # note -- can never smuggle printer commands such as cash-drawer kick.
+    text = ''.join(ch for ch in str(text) if ch == '\n' or ord(ch) >= 32)
     return text.encode('cp437', errors='replace')
 
 def _indian_format(n):
@@ -216,21 +220,23 @@ def build_receipt(job):
 
 def build_receipt_html(job):
     """Build HTML receipt string (same layout as browser version)."""
-    bill_num = job.get('bill_number', '')
-    date_str = format_date(job.get('created_at', ''))
-    salesman = job.get('salesman_name', '')
+    # Everything from the server is escaped before going into HTML, so text typed
+    # into a bill (e.g. a note) can never be interpreted by the HTML printer.
+    bill_num = html_escape(job.get('bill_number', '') or '')
+    date_str = html_escape(format_date(job.get('created_at', '')))
+    salesman = html_escape(job.get('salesman_name', '') or '')
     total = job.get('total', 0)
     mrp_total = job.get('mrp_total', 0)
     saved = int(round(mrp_total - total)) if mrp_total else 0
-    notes = job.get('notes', '')
+    notes = html_escape(job.get('notes', '') or '')
     items = job.get('items', [])
     payments = job.get('payments', [])
-    payment_mode = (job.get('payment_mode', '') or 'cash').upper()
+    payment_mode = html_escape((job.get('payment_mode', '') or 'cash').upper())
 
     items_rows = ''
     for item in items:
-        name = item.get('category_name', 'Item')
-        qty = item.get('quantity', 1)
+        name = html_escape(item.get('category_name', 'Item') or 'Item')
+        qty = int(item.get('quantity', 1))
         amt = int(round(item.get('amount', 0)))
         items_rows += (
             '<tr>'
@@ -243,7 +249,7 @@ def build_receipt_html(job):
     if len(payments) > 1:
         payment_html = '<div style="margin-top:6px">'
         for p in payments:
-            mode = p.get('mode', '').upper()
+            mode = html_escape((p.get('mode', '') or '').upper())
             amt = int(round(p.get('amount', 0)))
             payment_html += (
                 '<div style="display:flex;justify-content:space-between">'
@@ -631,6 +637,71 @@ class PrintAgentAPI:
         resp.raise_for_status()
         return resp.json()
 
+    def download_backup(self, dest_path):
+        url = '{}/api/backup'.format(self.base_url)
+        resp = requests.get(url, headers=self.headers, timeout=120, stream=True)
+        resp.raise_for_status()
+        with open(dest_path, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=65536):
+                if chunk:
+                    f.write(chunk)
+
+
+# ── Daily Database Backup ─────────────────────────────────────────
+
+class DailyBackup:
+    """Keeps a copy of the shop database on this PC, away from Railway.
+
+    Takes one backup per calendar day, as soon as the agent is running, so each
+    morning's copy holds everything up to the previous close. Keeps the newest
+    `keep` files. Never raises: a failed backup must never stop printing.
+    """
+    RETRY_SECONDS = 600
+
+    def __init__(self, api, backup_dir, keep):
+        self.api = api
+        self.backup_dir = backup_dir
+        self.keep = keep
+        self.last_attempt = 0
+
+    def _today_prefix(self):
+        return 'masterji-{}'.format(time.strftime('%Y-%m-%d'))
+
+    def _existing(self):
+        if not os.path.isdir(self.backup_dir):
+            return []
+        return sorted(f for f in os.listdir(self.backup_dir)
+                      if f.startswith('masterji-') and f.endswith('.db'))
+
+    def run_if_due(self):
+        try:
+            if any(f.startswith(self._today_prefix()) for f in self._existing()):
+                return
+            if time.time() - self.last_attempt < self.RETRY_SECONDS:
+                return
+            self.last_attempt = time.time()
+
+            os.makedirs(self.backup_dir, exist_ok=True)
+            name = '{}_{}.db'.format(self._today_prefix(), time.strftime('%H%M'))
+            final_path = os.path.join(self.backup_dir, name)
+            tmp_path = final_path + '.part'
+            self.api.download_backup(tmp_path)
+            if os.path.getsize(tmp_path) < 1024:
+                raise RuntimeError('backup file is suspiciously small')
+            os.replace(tmp_path, final_path)
+            print('[BACKUP] Saved {} ({} KB)'.format(name, os.path.getsize(final_path) // 1024))
+
+            for old in self._existing()[:-self.keep]:
+                os.remove(os.path.join(self.backup_dir, old))
+        except Exception as e:
+            print('[BACKUP] Failed, will retry in 10 min: {}'.format(e))
+            try:
+                for f in os.listdir(self.backup_dir):
+                    if f.endswith('.part'):
+                        os.remove(os.path.join(self.backup_dir, f))
+            except Exception:
+                pass
+
 
 # ── Main Loop ─────────────────────────────────────────────────────
 
@@ -698,7 +769,15 @@ def main():
     api = PrintAgentAPI(base_url, token)
     consecutive_errors = 0
 
+    backup = None
+    if config.getboolean('backup', 'enabled', fallback=True):
+        backup_dir = config.get('backup', 'dir', fallback=os.path.join(SCRIPT_DIR, 'backups'))
+        backup = DailyBackup(api, backup_dir, config.getint('backup', 'keep', fallback=30))
+        print('[OK] Daily database backup to {}'.format(backup_dir))
+
     while True:
+        if backup:
+            backup.run_if_due()
         try:
             jobs = api.get_pending_jobs()
             consecutive_errors = 0

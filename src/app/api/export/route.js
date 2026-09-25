@@ -6,7 +6,12 @@ import { isValidDate } from '@/lib/date-utils';
 export const dynamic = 'force-dynamic';
 
 function csvEscape(value) {
-  const str = value == null ? '' : String(value);
+  let str = value == null ? '' : String(value);
+  // Text starting with = + - @ (or tab/CR) would run as a formula in Excel or
+  // Sheets. Numbers are left alone so negative amounts stay numeric.
+  if (typeof value !== 'number' && /^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   return `"${str.replace(/"/g, '""')}"`;
 }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, getISTNow } from '@/lib/db';
-import { requireAuthOrAgent } from '@/lib/auth';
+import { requireAdminOrAgent } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ const VALID_STATUSES = new Set(['printing', 'printed', 'failed']);
 
 export async function PATCH(request, { params }) {
   try {
-    const auth = requireAuthOrAgent(request);
+    const auth = requireAdminOrAgent(request);
     if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const { id } = await params;

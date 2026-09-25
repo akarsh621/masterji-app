@@ -2,6 +2,13 @@
 
 const API_BASE = '/api';
 
+// A unique id for one save attempt. Sent with bills, returns and cash-outs so
+// that retrying after a lost response can never create a duplicate.
+export function newRequestId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 function getToken() {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('masterji_token');
@@ -81,10 +88,6 @@ export const api = {
 
   getEarnings: (month) => apiRequest(`/earnings?month=${month}`),
 
-  getUpiAccounts: (all) => apiRequest(`/upi-accounts${all ? '?all=true' : ''}`),
-  createUpiAccount: (body) => apiRequest('/upi-accounts', { method: 'POST', body: JSON.stringify(body) }),
-  updateUpiAccount: (id, body) => apiRequest(`/upi-accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteUpiAccount: (id) => apiRequest(`/upi-accounts/${id}`, { method: 'DELETE' }),
 
   exportCSV: (params) => {
     const token = getToken();

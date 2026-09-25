@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { requireAdmin } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const PIN_REGEX = /^\d{4}$/;
 
 export async function GET(request) {

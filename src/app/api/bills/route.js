@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getDb, generateBillNumber, updateCashDrawer } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-import { isValidDate } from '@/lib/date-utils';
+import { isValidDate, todayIST, daysBetweenYMD } from '@/lib/date-utils';
+
+export const dynamic = 'force-dynamic';
 
 const VALID_PAYMENT_MODES = new Set(['cash', 'upi', 'card']);
 const VALID_FILTER_MODES = new Set(['cash', 'upi', 'card', 'mixed']);
@@ -16,23 +18,6 @@ function isDateOnly(value) {
   return DATE_ONLY_REGEX.test(value);
 }
 
-function todayIST() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const year = parts.find(p => p.type === 'year')?.value;
-  const month = parts.find(p => p.type === 'month')?.value;
-  const day = parts.find(p => p.type === 'day')?.value;
-  return `${year}-${month}-${day}`;
-}
-
-function daysBetweenYMD(earlier, later) {
-  const a = new Date(earlier + 'T00:00:00Z').getTime();
-  const b = new Date(later + 'T00:00:00Z').getTime();
-  return Math.round((b - a) / 86400000);
-}
-
 export async function POST(request) {
   try {
     const result = requireAuth(request);
@@ -40,12 +25,15 @@ export async function POST(request) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
     const items = body?.items;
     const payments = body?.payments;
-    const discount_percent = Number(body?.discount_percent ?? 0);
+    const discount_percent_input = Number(body?.discount_percent ?? 0);
+    // When the client sends discount_amount (even 0) it is the source of truth;
+    // the percent is only a fallback for clients that send nothing else.
+    const hasDiscountAmount = typeof body?.discount_amount === 'number';
     const discount_amount_input = Number(body?.discount_amount ?? 0);
-    const mrp_total_input = Number(body?.mrp_total ?? 0);
+    const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
     let notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
     const billType = 'sale';
     const originalBillId = null;
@@ -83,6 +71,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Kam se kam ek payment mode daalo' }, { status: 400 });
     }
 
+    if (items.length > 100 || payments.length > 3) {
+      return NextResponse.json({ error: 'Bill mein bahut zyada items ya payments hain' }, { status: 400 });
+    }
+    if (notes.length > 500) {
+      return NextResponse.json({ error: 'Note 500 characters se chhota rakho' }, { status: 400 });
+    }
+
     for (const [i, p] of payments.entries()) {
       if (!VALID_PAYMENT_MODES.has(p?.mode)) {
         return NextResponse.json({ error: `Payment ${i + 1}: mode cash, upi ya card hona chahiye` }, { status: 400 });
@@ -93,7 +88,10 @@ export async function POST(request) {
       }
     }
 
-    if (!Number.isFinite(discount_percent) || discount_percent < 0 || discount_percent > 100) {
+    if (!Number.isFinite(discount_amount_input) || discount_amount_input < 0) {
+      return NextResponse.json({ error: 'Discount amount galat hai' }, { status: 400 });
+    }
+    if (!Number.isFinite(discount_percent_input) || discount_percent_input < 0 || discount_percent_input > 100) {
       return NextResponse.json({ error: 'Discount 0-100% ke beech hona chahiye' }, { status: 400 });
     }
 
@@ -130,11 +128,13 @@ export async function POST(request) {
 
     const subtotal = round2(normalizedItems.reduce((sum, item) => sum + item.amount, 0));
     const mrp_total = round2(normalizedItems.reduce((sum, item) => sum + ((item.mrp || (item.amount / item.quantity)) * item.quantity), 0));
-    const rawDiscountAmt = discount_amount_input > 0
+    const rawDiscountAmt = hasDiscountAmount
       ? discount_amount_input
-      : round2(subtotal * (discount_percent / 100));
+      : round2(subtotal * (discount_percent_input / 100));
     const discount_amount = round2(Math.min(rawDiscountAmt, subtotal));
     const total = round2(subtotal - discount_amount);
+    // Stored percent is always derived from the amount, so the two never disagree.
+    const discount_percent = subtotal > 0 ? round2((discount_amount / subtotal) * 100) : 0;
 
     if (total <= 0) {
       return NextResponse.json({ error: 'Total amount 0 se zyada hona chahiye' }, { status: 400 });
@@ -174,13 +174,9 @@ export async function POST(request) {
     const categoryNameMap = Object.fromEntries(existingCategories.map(c => [c.id, c.name]));
 
     const insertBill = db.prepare(`
-      INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode, salesman_id, notes, type, original_bill_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertBillBackdated = db.prepare(`
-      INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode, salesman_id, notes, type, original_bill_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode,
+                         salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
     `);
 
     const insertItem = db.prepare(`
@@ -194,16 +190,11 @@ export async function POST(request) {
     `);
 
     const createBill = db.transaction((billNumber) => {
-      let billResult;
-      if (isBackdated) {
-        billResult = insertBillBackdated.run(
-          billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode, effectiveSalesmanId, notes, billType, originalBillId, backdatedCreatedAt
-        );
-      } else {
-        billResult = insertBill.run(
-          billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode, effectiveSalesmanId, notes, billType, originalBillId
-        );
-      }
+      const billResult = insertBill.run(
+        billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode,
+        effectiveSalesmanId, notes, billType, originalBillId, isBackdated ? 1 : 0, clientRequestId,
+        isBackdated ? backdatedCreatedAt : null
+      );
       const billId = billResult.lastInsertRowid;
 
       for (const item of normalizedItems) {
@@ -226,6 +217,22 @@ export async function POST(request) {
       return { billId, billNumber };
     });
 
+    // A retry of a request that already succeeded (e.g. the response was lost
+    // on a bad connection) returns the existing bill instead of a duplicate.
+    const findExisting = () => clientRequestId
+      ? db.prepare("SELECT id, bill_number, total FROM bills WHERE client_request_id = ? AND type = 'sale'").get(clientRequestId)
+      : null;
+    const existingResponse = (existing) => NextResponse.json({
+      message: 'Bill pehle hi ban chuka hai',
+      bill_number: existing.bill_number,
+      bill_id: existing.id,
+      total: existing.total,
+      duplicate: true,
+    }, { status: 200 });
+
+    const already = findExisting();
+    if (already) return existingResponse(already);
+
     let bill = null;
     let attempts = 0;
     while (!bill && attempts < 3) {
@@ -234,6 +241,10 @@ export async function POST(request) {
         bill = createBill(generateBillNumber());
       } catch (err) {
         const message = String(err?.message || '');
+        if (message.includes('bills.client_request_id')) {
+          const existing = findExisting();
+          if (existing) return existingResponse(existing);
+        }
         if (message.includes('UNIQUE constraint failed: bills.bill_number') && attempts < 3) {
           continue;
         }
@@ -365,8 +376,15 @@ export async function GET(request) {
 
     if (billIds.length > 0) {
       const ph = billIds.map(() => '?').join(',');
+      // returned_qty: pieces of each sale line already returned (active returns only),
+      // so Bill Book can show how many are still returnable.
       const allItems = db.prepare(`
-        SELECT bi.*, c.name as category_name, c.group_name
+        SELECT bi.*, c.name as category_name, c.group_name,
+               COALESCE((
+                 SELECT SUM(ri.quantity) FROM bill_items ri
+                 JOIN bills rb ON rb.id = ri.bill_id
+                 WHERE ri.orig_bill_item_id = bi.id AND rb.type = 'return' AND rb.deleted_at IS NULL
+               ), 0) AS returned_qty
         FROM bill_items bi
         JOIN categories c ON bi.category_id = c.id
         WHERE bi.bill_id IN (${ph})

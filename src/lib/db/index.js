@@ -185,7 +185,72 @@ const MIGRATIONS = [
     try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_by INTEGER REFERENCES users(id)"); } catch {}
     try { db.exec("ALTER TABLE upi_accounts ADD COLUMN updated_at DATETIME"); } catch {}
   },
+  // v8: Money integrity -- backdated flag, duplicate-request protection,
+  // line-level return matching, and bill correction links.
+  (db) => {
+    addColumnIfMissing(db, 'bills', 'is_backdated', 'INTEGER NOT NULL DEFAULT 0');
+    db.exec("UPDATE bills SET is_backdated = 1 WHERE notes LIKE '[Backdated]%'");
+
+    addColumnIfMissing(db, 'bills', 'client_request_id', 'TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_bills_client_request_id ON bills(client_request_id)');
+    addColumnIfMissing(db, 'cash_out', 'client_request_id', 'TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_out_client_request_id ON cash_out(client_request_id)');
+
+    addColumnIfMissing(db, 'bills', 'replaces_bill_id', 'INTEGER REFERENCES bills(id)');
+
+    addColumnIfMissing(db, 'bill_items', 'orig_bill_item_id', 'INTEGER REFERENCES bill_items(id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_bill_items_orig ON bill_items(orig_bill_item_id)');
+    backfillReturnLineLinks(db);
+  },
+  // v9: Failed login attempts, for brute-force protection on the public URL.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS login_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_login_attempts_account ON login_attempts(account, at)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip, at)');
+  },
+  // v10: UPI QR generation removed (payments are verified on the POS machines).
+  // UPI as a payment mode is unaffected; only the VPA list goes.
+  (db) => {
+    db.exec('DROP TABLE IF EXISTS upi_accounts');
+  },
 ];
+
+function addColumnIfMissing(db, table, column, definition) {
+  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
+  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+// Existing return lines were matched to the sale by category only. Link each
+// to a concrete sale line (same category, with quantity still unreturned), so
+// quantities already refunded keep counting against what can be returned.
+function backfillReturnLineLinks(db) {
+  const returnLines = db.prepare(`
+    SELECT ri.id, ri.category_id, ri.quantity, rb.original_bill_id
+    FROM bill_items ri
+    JOIN bills rb ON rb.id = ri.bill_id
+    WHERE rb.type = 'return' AND rb.original_bill_id IS NOT NULL AND ri.orig_bill_item_id IS NULL
+    ORDER BY ri.id
+  `).all();
+  const saleLines = db.prepare('SELECT id, category_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY id');
+  const link = db.prepare('UPDATE bill_items SET orig_bill_item_id = ? WHERE id = ?');
+  const remainingByBill = new Map();
+
+  for (const r of returnLines) {
+    if (!remainingByBill.has(r.original_bill_id)) {
+      remainingByBill.set(r.original_bill_id, saleLines.all(r.original_bill_id).map(l => ({ ...l, left: l.quantity })));
+    }
+    const lines = remainingByBill.get(r.original_bill_id).filter(l => l.category_id === r.category_id);
+    const target = lines.find(l => l.left >= r.quantity) || lines.find(l => l.left > 0) || lines[0];
+    if (!target) continue;
+    target.left -= r.quantity;
+    link.run(target.id, r.id);
+  }
+}
 
 function runMigrations(db) {
   try { db.exec("ALTER TABLE app_state ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 0"); } catch {}
@@ -208,20 +273,36 @@ function runMigrations(db) {
   }
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production' && process.env.DB_MODE !== 'dev';
+
 function autoSeed(db) {
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count > 0) return;
 
-  console.log('Empty database detected -- auto-seeding default data...');
-
-  const adminPassword = bcrypt.hashSync('admin123', 10);
   const insertUser = db.prepare(
     'INSERT INTO users (name, role, username, password_hash, pin) VALUES (?, ?, ?, ?, ?)'
   );
-  insertUser.run('Admin', 'admin', 'admin', adminPassword, null);
-  insertUser.run('Salesman 1', 'salesman', null, null, '1111');
-  insertUser.run('Salesman 2', 'salesman', null, null, '2222');
-  insertUser.run('Salesman 3', 'salesman', null, null, '3333');
+
+  if (IS_PRODUCTION) {
+    // An empty users table in production almost always means the Railway volume
+    // is missing or DATA_DIR is wrong. Refuse to start rather than quietly
+    // creating a fresh database with a known password on the public URL.
+    const initialPassword = process.env.ADMIN_INITIAL_PASSWORD;
+    if (!initialPassword || initialPassword.length < 8) {
+      throw new Error(
+        `Production database at ${DB_PATH} has no users. Check that the volume is mounted and DATA_DIR is set. ` +
+        'For a genuinely new install, set ADMIN_INITIAL_PASSWORD (8+ characters) for the first start only.'
+      );
+    }
+    console.log('New production database -- creating admin from ADMIN_INITIAL_PASSWORD...');
+    insertUser.run('Admin', 'admin', 'admin', bcrypt.hashSync(initialPassword, 10), null);
+  } else {
+    console.log('Empty dev database detected -- auto-seeding default data...');
+    insertUser.run('Admin', 'admin', 'admin', bcrypt.hashSync('admin123', 10), null);
+    insertUser.run('Salesman 1', 'salesman', null, null, '1111');
+    insertUser.run('Salesman 2', 'salesman', null, null, '2222');
+    insertUser.run('Salesman 3', 'salesman', null, null, '3333');
+  }
 
   const insertCategory = db.prepare(
     'INSERT INTO categories (name, group_name, display_order) VALUES (?, ?, ?)'
@@ -231,9 +312,10 @@ function autoSeed(db) {
       insertCategory.run(name, group, order);
     }
   });
-  seedAll();
+  const categoryCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();
+  if (categoryCount.count === 0) seedAll();
 
-  console.log('Auto-seed complete: admin/admin123, PINs: 1111, 2222, 3333');
+  console.log(IS_PRODUCTION ? 'Initial admin created.' : 'Dev auto-seed complete: admin/admin123, PINs: 1111, 2222, 3333');
 }
 
 let db;
@@ -246,16 +328,27 @@ export function getDb() {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const conn = new Database(DB_PATH);
+  try {
+    conn.pragma('journal_mode = WAL');
+    conn.pragma('foreign_keys = ON');
 
-  db.exec(SCHEMA_SQL);
-  db.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0)");
-  runMigrations(db);
+    conn.exec(SCHEMA_SQL);
+    conn.exec("INSERT OR IGNORE INTO app_state (id, cash_drawer) VALUES (1, 0)");
+    runMigrations(conn);
 
-  autoSeed(db);
+    autoSeed(conn);
+  } catch (err) {
+    conn.close();
+    throw err;
+  }
 
+  // Only cache once startup fully succeeded, so a failed start is retried
+  // (and keeps failing loudly) instead of handing out a half-initialised DB.
+  db = conn;
+  // Closing checkpoints the WAL into the main file, so a redeploy leaves a
+  // single self-contained masterji.db on the volume.
+  process.once('exit', () => { try { db.close(); } catch {} });
   return db;
 }
 
@@ -278,11 +371,12 @@ export function getCashDrawer(db) {
 }
 
 export function updateCashDrawer(db, delta) {
-  db.prepare('UPDATE app_state SET cash_drawer = cash_drawer + ? WHERE id = 1').run(delta);
+  // Rounded on every write so float drift (0.1 + 0.2 != 0.3) can never accumulate.
+  db.prepare('UPDATE app_state SET cash_drawer = ROUND(cash_drawer + ?, 2) WHERE id = 1').run(delta);
 }
 
 export function setCashDrawer(db, amount) {
-  db.prepare('UPDATE app_state SET cash_drawer = ? WHERE id = 1').run(amount);
+  db.prepare('UPDATE app_state SET cash_drawer = ROUND(?, 2) WHERE id = 1').run(amount);
 }
 
 export function getPettyCashTarget(db) {

@@ -1,8 +1,10 @@
 Master Ji Print Agent -- Windows 7 Setup
 =========================================
 
-This agent runs on the shop PC and automatically prints receipts
-when salesmen tap "Print Bill" on their phones.
+This agent runs on the shop PC. It:
+  - prints receipts when salesmen tap "Print Bill" on their phones
+  - saves a copy of the shop database on this PC once a day (backups folder)
+  - restarts itself automatically if it ever stops
 
 REQUIREMENTS
 ------------
@@ -26,23 +28,37 @@ SETUP (one time)
      * name = your printer name (check in Devices and Printers)
 
 3. Set PRINT_AGENT_TOKEN on Railway:
-   - Go to Railway dashboard > your app > Variables
-   - Add: PRINT_AGENT_TOKEN = (any secret string, e.g. mj-print-secret123)
+   - Generate a long random value, e.g. on a Mac/Linux: openssl rand -hex 32
+   - Railway dashboard > your app > Variables > PRINT_AGENT_TOKEN = (that value)
+   - Put the SAME value in config.ini as agent_token
    - Redeploy the app
+   If the two values don't match, nothing prints.
 
 RUNNING
 -------
-Double-click start.bat to start the agent.
-It will poll for print jobs every 5 seconds and auto-print them.
-
-To stop: press Ctrl+C in the agent window, or just close it.
+Double-click start.bat. It polls for print jobs every 5 seconds.
+If the agent stops for any reason, start.bat restarts it after 10 seconds.
+To stop it: close the agent window.
 
 AUTO-START ON BOOT
 ------------------
-To make the agent start automatically when the PC turns on:
 1. Press Win+R, type: shell:startup, press Enter
 2. Copy start.bat into that Startup folder
 3. Done -- the agent starts every time Windows boots
+
+UPDATING THE AGENT
+------------------
+Double-click update.bat, then close the agent window and run start.bat again.
+Updates are downloaded from the Railway app itself (using agent_token from
+config.ini), so they keep working even though the code repository is private.
+Each updated file's previous version is kept as <file>.bak.
+
+BACKUPS
+-------
+Once a day the agent saves a full copy of the shop database into the
+"backups" folder next to agent.py (masterji-YYYY-MM-DD_HHMM.db), keeping
+the last 30. This is the only copy stored outside Railway -- don't delete
+the folder. Settings are in the [backup] section of config.ini.
 
 TROUBLESHOOTING
 ---------------
@@ -50,6 +66,7 @@ TROUBLESHOOTING
   exactly what you see in Control Panel > Devices and Printers
 - "Cannot reach server": Check internet connection, check the URL
   in config.ini is correct
+- "[BACKUP] Failed": usually no internet; it retries every 10 minutes
 - "pywin32 not installed": Run install.bat again, or manually:
   pip install pywin32==228
 - Light printing: Adjust print density in Printer Preferences
