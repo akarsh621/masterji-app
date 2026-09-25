@@ -72,14 +72,14 @@ export default function Customers() {
           type="search"
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Naam ya mobile"
+          placeholder="Customer name ya mobile"
           className="input"
         />
         <button type="submit" className="btn-primary text-sm">Search</button>
       </form>
 
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm text-gray-500">{data ? `${data.pagination.total} customers` : ''}</span>
+        <span className="text-sm text-gray-500">{data ? `${data.pagination.total} ${data.pagination.total === 1 ? 'customer' : 'customers'}` : ''}</span>
         <button onClick={exportCsv} disabled={exporting} className="text-sm text-green-700 font-medium">
           {exporting ? 'Export ho raha hai...' : '⬇ CSV Download'}
         </button>
@@ -98,12 +98,12 @@ export default function Customers() {
           <div key={c.id} className="card">
             <button onClick={() => toggle(c)} className="w-full text-left flex items-center justify-between gap-3">
               <div>
-                <div className="font-medium">{c.name || 'Naam nahi pata'}</div>
+                <div className="font-medium">{c.name || 'Name nahi pata'}</div>
                 <div className="text-xs text-gray-500">{c.phone}</div>
               </div>
               <div className="text-right">
                 <div className="font-bold">{fmt(c.spend)}</div>
-                <div className="text-xs text-gray-500">{c.visits} bill · {formatDate(c.last_visit)}</div>
+                <div className="text-xs text-gray-500">{c.visits} {c.visits === 1 ? 'bill' : 'bills'} · {formatDate(c.last_visit)}</div>
               </div>
             </button>
             {openId === c.id && (

@@ -63,6 +63,10 @@ def qr_code_bytes(data):
     return bytes(buf)
 
 LINE_WIDTH = 42
+
+# Composition-scheme Bill of Supply. Keep in sync with src/lib/print-receipt.js.
+SHOP_GSTIN = ''
+COMPOSITION_NOTE = 'Composition taxable person, not eligible to collect tax on supplies'
 LINE = b'-' * LINE_WIDTH + b'\n'
 DOUBLE_LINE = b'=' * LINE_WIDTH + b'\n'
 
@@ -133,7 +137,14 @@ def build_receipt(job):
     buf += encode('C Block, Main Market Road\n')
     buf += encode('Shastri Nagar, Ghaziabad\n')
     buf += encode('Ph: 9540664066 / 0120-4245977\n')
+    if SHOP_GSTIN:
+        buf += encode('GSTIN: {}\n'.format(SHOP_GSTIN))
     buf += DOUBLE_LINE
+    buf += encode('BILL OF SUPPLY\n')
+    buf += NORMAL
+    buf += encode('Composition taxable person, not\n')
+    buf += encode('eligible to collect tax on supplies\n')
+    buf += BOLD_ON + DSTRIKE_ON
 
     buf += LEFT
     bill_num = job.get('bill_number', '')
@@ -317,7 +328,10 @@ def build_receipt_html(job):
         '  <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>\n'
         '  <div class="center" style="font-size:12px;margin-top:3px">C Block, Main Market Road<br>Shastri Nagar, Ghaziabad</div>\n'
         '  <div class="center" style="font-size:12px">Ph: 9540664066 / 0120-4245977</div>\n'
+        '{gstin_html}'
         '  <div class="double-divider"></div>\n'
+        '  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>\n'
+        '  <div class="center" style="font-size:11px;margin-bottom:4px">{composition_note}</div>\n'
         '\n'
         '  <div style="display:flex;justify-content:space-between">\n'
         '    <span class="bold">{bill_num}</span>\n'
@@ -377,6 +391,8 @@ def build_receipt_html(job):
     ).format(
         bill_num=bill_num,
         date_str=date_str,
+        gstin_html=('  <div class="center" style="font-size:12px">GSTIN: {}</div>\n'.format(SHOP_GSTIN) if SHOP_GSTIN else ''),
+        composition_note=COMPOSITION_NOTE,
         salesman_html=salesman_html,
         items_rows=items_rows,
         discount_html=discount_html,

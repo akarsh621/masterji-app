@@ -3,6 +3,10 @@ import { normalizeSavedBill } from '@/lib/bill-data';
 const SHOP_NAME = 'MASTER JI FASHION HOUSE';
 const SHOP_ADDRESS = 'C Block, Main Market Road\nShastri Nagar, Ghaziabad';
 const SHOP_PHONE = 'Ph: 9540664066 / 0120-4245977';
+// Composition-scheme Bill of Supply: GSTIN plus the declaration required on
+// every bill. Keep in sync with print-agent/agent.py (SHOP_GSTIN).
+const SHOP_GSTIN = '';
+const COMPOSITION_NOTE = 'Composition taxable person, not eligible to collect tax on supplies';
 // QR for the Google review link (https://g.page/r/Cdj1aJR-po6TEBI/review), generated
 // once into /public so receipts never depend on a third-party QR service.
 // Absolute URL because the receipt is written into a blank popup window.
@@ -106,7 +110,10 @@ export function buildReceiptHTML(bill) {
   <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>
   <div class="center" style="font-size:12px;margin-top:3px;white-space:pre-line">${SHOP_ADDRESS}</div>
   <div class="center" style="font-size:12px">${SHOP_PHONE}</div>
+  ${SHOP_GSTIN ? `<div class="center" style="font-size:12px">GSTIN: ${SHOP_GSTIN}</div>` : ''}
   <div class="double-divider"></div>
+  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>
+  <div class="center" style="font-size:11px;margin-bottom:4px">${COMPOSITION_NOTE}</div>
 
   <!-- Bill info -->
   <div style="display:flex;justify-content:space-between">

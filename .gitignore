@@ -7,3 +7,4 @@ masterji_dev.db
 print-agent/config.ini
 print-agent/backups/
 .next-prodcheck/
+.DS_Store

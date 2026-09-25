@@ -7,6 +7,7 @@ import { loadDraft, saveDraft, clearDraft } from '@/lib/bill-draft';
 import LoadError from '@/components/LoadError';
 import { normalizePhone, isValidPhone } from '@/lib/phone';
 import { todayIST } from '@/lib/date-utils';
+import { MAX_MRP } from '@/lib/limits';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 
@@ -239,10 +240,23 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
   const parsedMrp = parseFloat(mrpInput) || 0;
   const parsedDiscPerc = parseFloat(discPercInput) || 0;
   const discountInvalid = parsedDiscPerc < 0 || parsedDiscPerc >= 100;
+  const mrpTooHigh = parsedMrp > MAX_MRP;
   // Rounded to whole rupees, but never above the MRP (e.g. MRP 499.5 at 0% stays 499.5).
-  const computedSellingPrice = parsedMrp > 0 && !discountInvalid
+  const computedSellingPrice = parsedMrp > 0 && !discountInvalid && !mrpTooHigh
     ? Math.min(Math.round(parsedMrp * (1 - parsedDiscPerc / 100)), parsedMrp)
     : 0;
+
+  // The amount has changed, so anything chosen for the old amount must be chosen
+  // again: final price, split amount and payment mode. Customer and note stay.
+  const itemsChanged = () => {
+    setDiscountMode('none');
+    setDiscountInput('');
+    setEditingTotal(false);
+    setSplitEnabled(false);
+    setSplitAmount('');
+    setPrimaryMode(null);
+    setPaymentModeMissing(false);
+  };
 
   const addItem = () => {
     const cat = getSelectedCategory();
@@ -259,6 +273,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
       quantity: qty,
       amount: computedSellingPrice * qty,
     }]);
+    itemsChanged();
 
     setMrpInput('');
     setDiscPercInput('');
@@ -267,7 +282,19 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
   };
 
   const removeItem = (index) => {
+    // Removing the last item ends this bill: nothing from it carries into the next one.
+    // (While correcting a bill via Bill badlo, stay in that mode.)
+    if (items.length <= 1 && !replacesBill) {
+      resetBill();
+      return;
+    }
     setItems(prev => prev.filter((_, i) => i !== index));
+    itemsChanged();
+  };
+
+  const cancelBill = () => {
+    if (!window.confirm('Ye bill cancel karein? Saare items hat jayenge.')) return;
+    resetBill();
   };
 
   // The tapped number is the line total, so the edit is the new line total.
@@ -292,6 +319,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
       const discPerc = it.mrp > 0 ? Math.round((1 - perPiece / it.mrp) * 100) : 0;
       return { ...it, price_per_piece: perPiece, discount_percent: discPerc, amount: newTotal };
     }));
+    if (newTotal !== item.amount) itemsChanged();
   };
 
   const mrpTotal = items.reduce((s, i) => s + (i.mrp * i.quantity), 0);
@@ -510,7 +538,14 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
   if (screen === 'items') {
     return (
       <div>
-        <h2 className="text-lg font-bold mb-3">Naya Bill</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold">Naya Bill</h2>
+          {items.length > 0 && !replacesBill && (
+            <button onClick={cancelBill} className="text-sm font-medium text-red-600 px-3 py-2 -my-2 -mr-3">
+              Bill cancel karo
+            </button>
+          )}
+        </div>
 
         {replacesBill && (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -528,12 +563,12 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
 
         {draftRestored && !replacesBill && items.length > 0 && (
           <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between gap-3">
-            <span className="text-sm text-blue-800">Pichla bill wapas aa gaya</span>
+            <span className="text-sm text-blue-800">Pichla bill abhi bacha hai</span>
             <button
-              onClick={resetBill}
+              onClick={cancelBill}
               className="text-sm font-medium text-blue-700 border border-blue-300 bg-white rounded-lg px-3 py-2 min-h-[40px]"
             >
-              Naya shuru karo
+              Naya Bill
             </button>
           </div>
         )}
@@ -612,13 +647,16 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
 
               {/* Live calculation */}
               <div className="text-base font-semibold text-orange-600 min-h-[24px]">
-                {discountInvalid && (
+                {mrpTooHigh && (
+                  <span className="text-red-600">MRP bahut zyada hai — check karo (max ₹{MAX_MRP.toLocaleString('en-IN')})</span>
+                )}
+                {!mrpTooHigh && discountInvalid && (
                   <span className="text-red-600">Discount 0 se 99% ke beech hona chahiye</span>
                 )}
-                {parsedMrp > 0 && parsedDiscPerc > 0 && !discountInvalid && (
+                {!mrpTooHigh && parsedMrp > 0 && parsedDiscPerc > 0 && !discountInvalid && (
                   <>₹{parsedMrp} - {parsedDiscPerc}% = ₹{computedSellingPrice}</>
                 )}
-                {parsedMrp > 0 && parsedDiscPerc === 0 && (
+                {!mrpTooHigh && parsedMrp > 0 && parsedDiscPerc === 0 && (
                   <>₹{parsedMrp} (no discount)</>
                 )}
               </div>
@@ -684,7 +722,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
               <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mr-1.5">
                 {totalPieces}
               </span>
-              items
+              {totalPieces === 1 ? 'item' : 'items'}
             </div>
 
             {/* Item rows */}
@@ -699,7 +737,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
                   </div>
                   <button
                     onClick={() => removeItem(idx)}
-                    className="text-red-500 hover:text-red-700 text-xs font-medium px-3 py-2 min-h-[36px] rounded-lg bg-red-50 hover:bg-red-100"
+                    className="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-2 -my-2 -mr-3"
                   >
                     Hatao
                   </button>
@@ -793,7 +831,10 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
 
       {/* Full bill snapshot */}
       <div className="card mb-3">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Bill Preview</div>
+        <div className="flex items-baseline justify-between mb-2">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Bill Preview</span>
+          <span className="text-sm font-bold text-gray-900">{totalPieces} {totalPieces === 1 ? 'item' : 'items'}</span>
+        </div>
         <BillPreview
           items={items.map(i => ({ name: i.category_name, qty: i.quantity, mrp: i.mrp, amount: i.amount }))}
           mrpTotal={mrpTotal}
@@ -882,7 +923,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
                 )}
                 <button
                   onClick={() => { setBackdateValue(''); setBackdateOpen(false); }}
-                  className="text-red-500 hover:text-red-700 text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100"
+                  className="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-2 -my-2"
                 >
                   Hatao
                 </button>
@@ -912,14 +953,14 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
           <>
             {customerLookup?.customer && (
               <div className="text-sm text-green-700">
-                Pehle aa chuke hain · {customerLookup.customer.visits} bill
+                Pehle aa chuke hain · {customerLookup.customer.visits} {customerLookup.customer.visits === 1 ? 'bill' : 'bills'}
               </div>
             )}
             <input
               type="text"
               value={customerName}
               onChange={e => setCustomerName(e.target.value.slice(0, 60))}
-              placeholder="Naam (optional)"
+              placeholder="Customer name (optional)"
               className="input"
             />
           </>
@@ -1116,6 +1157,13 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
         >
           {submitting ? 'Saving...' : `✓ Bill Save Karo — ₹${displayTotal.toLocaleString('en-IN')}`}
         </button>
+        {!replacesBill && (
+          <div className="text-center">
+            <button onClick={cancelBill} disabled={submitting} className="text-sm font-medium text-red-600 px-3 py-2">
+              Bill cancel karo
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

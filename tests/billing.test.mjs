@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createSale, drawer, users, categories, bill, queryOne } from './helpers.mjs';
+import { api, createSale, saleBody, drawer, users, categories, bill, queryOne } from './helpers.mjs';
 
 const { admin, s1, s2 } = users();
 const [kurti, top] = categories();
@@ -75,4 +75,13 @@ test('UPI QR is gone, but UPI and mixed payments still work', async () => {
   assert.equal(upi.payment_mode, 'upi');
   const mixed = await createSale(s1, [[kurti.id, 300, 300]], [{ mode: 'cash', amount: 100 }, { mode: 'upi', amount: 200 }]);
   assert.equal(mixed.payment_mode, 'mixed');
+});
+
+test('an MRP above the per-piece limit is refused (typing slip, e.g. 17991799)', async () => {
+  const [cat] = categories();
+  const res = await api(users().s1, 'POST', '/api/bills', saleBody([[cat.id, 17991799, 17991799]], [{ mode: 'cash', amount: 17991799 }]));
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /MRP/);
+  const ok = await api(users().s1, 'POST', '/api/bills', saleBody([[cat.id, 25000, 25000]], [{ mode: 'upi', amount: 25000 }]));
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
 });

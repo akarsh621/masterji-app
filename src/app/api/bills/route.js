@@ -3,6 +3,7 @@ import { getDb, generateBillNumber, updateCashDrawer, getISTNow } from '@/lib/db
 import { requireAuth } from '@/lib/auth';
 import { isValidDate, todayIST, daysBetweenYMD } from '@/lib/date-utils';
 import { normalizePhone, isValidPhone } from '@/lib/phone';
+import { MAX_MRP, MAX_QTY_PER_LINE } from '@/lib/limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -124,7 +125,7 @@ export async function POST(request) {
       if (!Number.isInteger(categoryId) || categoryId <= 0) {
         return NextResponse.json({ error: `Item ${index + 1}: category galat hai` }, { status: 400 });
       }
-      if (!Number.isInteger(quantity) || quantity <= 0) {
+      if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QTY_PER_LINE) {
         return NextResponse.json({ error: `Item ${index + 1}: quantity galat hai` }, { status: 400 });
       }
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -132,6 +133,9 @@ export async function POST(request) {
       }
       if (mrp !== null && (!Number.isFinite(mrp) || mrp <= 0)) {
         return NextResponse.json({ error: `Item ${index + 1}: MRP galat hai` }, { status: 400 });
+      }
+      if ((mrp ?? amount / quantity) > MAX_MRP) {
+        return NextResponse.json({ error: `Item ${index + 1}: MRP ₹${MAX_MRP.toLocaleString('en-IN')} se zyada nahi ho sakta — check karo` }, { status: 400 });
       }
       if (mrp !== null && amount > mrp * quantity + 0.01) {
         return NextResponse.json({ error: `Item ${index + 1}: amount MRP se zyada nahi ho sakta` }, { status: 400 });

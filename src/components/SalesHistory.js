@@ -52,6 +52,7 @@ function getMinutesSinceCreation(createdAt) {
   return (Date.now() - parsed.getTime()) / 60000;
 }
 
+const PAYMENT_LABELS = { cash: 'Cash', upi: 'UPI', card: 'Card', mixed: 'Mixed' };
 const PAYMENT_ICONS = { cash: '💵', upi: '📱', card: '💳', mixed: '💵+📱' };
 
 export default function SalesHistory({ onVoidAndRecreate }) {
@@ -60,16 +61,12 @@ export default function SalesHistory({ onVoidAndRecreate }) {
   const [salesmen, setSalesmen] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState(() => {
+  const defaultFilters = () => {
     const todayIst = getISTDateInputValue();
-    return {
-      from: todayIst,
-      to: todayIst,
-      payment_mode: '',
-      salesman_id: '',
-      q: '',
-    };
-  });
+    return { from: todayIst, to: todayIst, payment_mode: '', salesman_id: '', q: '' };
+  };
+  const [filters, setFilters] = useState(defaultFilters);
+  const [showFilters, setShowFilters] = useState(false);
   const [expandedBill, setExpandedBill] = useState(null);
   const [returnBillId, setReturnBillId] = useState(null);
   const [returnItems, setReturnItems] = useState([]);
@@ -85,17 +82,18 @@ export default function SalesHistory({ onVoidAndRecreate }) {
   const [loadError, setLoadError] = useState('');
   const fetchSeq = useRef(0);
 
-  const fetchBills = (page = 1) => {
+  // `f` lets a change apply immediately, before the filters state updates.
+  const fetchBills = (page = 1, f = filters) => {
     // Only the latest request may update the list (fast filter/page taps).
     const seq = ++fetchSeq.current;
     setLoading(true);
     setLoadError('');
     const params = { page, limit: 20 };
-    if (filters.from) params.from = filters.from;
-    if (filters.to) params.to = filters.to;
-    if (filters.payment_mode) params.payment_mode = filters.payment_mode;
-    if (filters.salesman_id) params.salesman_id = filters.salesman_id;
-    if (filters.q.trim()) params.q = filters.q.trim();
+    if (f.from) params.from = f.from;
+    if (f.to) params.to = f.to;
+    if (f.payment_mode) params.payment_mode = f.payment_mode;
+    if (f.salesman_id) params.salesman_id = f.salesman_id;
+    if (f.q.trim()) params.q = f.q.trim();
 
     api.getBills(params)
       .then(d => {
@@ -122,6 +120,35 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     e.preventDefault();
     fetchBills(1);
   };
+
+  // Filters apply as soon as they change; no extra button to remember.
+  const applyFilter = (change) => {
+    const next = { ...filters, ...change };
+    setFilters(next);
+    fetchBills(1, next);
+  };
+
+  // Clearing the search (✕, or deleting the text) goes straight back to the normal list.
+  const setSearch = (q) => {
+    const next = { ...filters, q };
+    setFilters(next);
+    if (!q.trim() && filters.q.trim()) fetchBills(1, next);
+  };
+
+  const shortDate = (ymd) => new Date(ymd + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const filterSummary = (() => {
+    const todayYmd = getISTDateInputValue();
+    const parts = [];
+    if (filters.from === todayYmd && filters.to === todayYmd) parts.push('Aaj');
+    else if (filters.from && filters.from === filters.to) parts.push(shortDate(filters.from));
+    else if (filters.from || filters.to) parts.push(`${filters.from ? shortDate(filters.from) : '…'} – ${filters.to ? shortDate(filters.to) : '…'}`);
+    else parts.push('All dates');
+    if (filters.salesman_id) parts.push(salesmen.find(s => String(s.id) === filters.salesman_id)?.name || 'Salesman');
+    if (filters.payment_mode) parts.push(PAYMENT_LABELS[filters.payment_mode] || filters.payment_mode);
+    return parts.join(' · ');
+  })();
+  const d0 = defaultFilters();
+  const filtersChanged = filters.from !== d0.from || filters.to !== d0.to || filters.salesman_id || filters.payment_mode;
 
   const handleDelete = async (bill) => {
     if (!confirm(`${bill.bill_number} cancel karna hai? Ye wapas nahi hoga.`)) return;
@@ -215,78 +242,103 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     <div>
       <h2 className="text-lg font-bold mb-4">Bill Book</h2>
 
-      <form onSubmit={handleSearch} className="card mb-4 space-y-3">
-        <div>
-          <div className="flex gap-2">
+      <form onSubmit={handleSearch} className="card mb-4 space-y-2">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
             <input
-              type="search"
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
               value={filters.q}
-              onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
-              placeholder="Bill no., mobile, naam ya amount"
-              className="input"
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Bill no., mobile, customer name"
+              className="input pr-10"
             />
             {filters.q && (
               <button
                 type="button"
-                onClick={() => { setFilters(f => ({ ...f, q: '' })); }}
-                className="px-3 text-sm text-gray-500 border border-gray-200 rounded-lg"
+                onClick={() => setSearch('')}
+                aria-label="Search hatao"
+                className="absolute right-0 top-0 h-full px-3 text-lg text-gray-400"
               >
                 ✕
               </button>
             )}
           </div>
-          {filters.q.trim() && (
-            <p className="text-xs text-gray-500 mt-1">Sab dates mein dhoondhega (date filter nahi lagega)</p>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">From</label>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={e => setFilters(f => ({ ...f, from: e.target.value }))}
-              className="input text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">To</label>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={e => setFilters(f => ({ ...f, to: e.target.value }))}
-              className="input text-sm"
-            />
-          </div>
-        </div>
-        <div className={`grid gap-2 ${user.role === 'admin' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
-          {user.role === 'admin' && (
-            <select
-              value={filters.salesman_id}
-              onChange={e => setFilters(f => ({ ...f, salesman_id: e.target.value }))}
-              className="input text-sm"
-            >
-              <option value="">Sab Salesman</option>
-              {salesmen.map(s => (
-                <option key={s.id} value={String(s.id)}>{s.name}</option>
-              ))}
-            </select>
-          )}
-          <select
-            value={filters.payment_mode}
-            onChange={e => setFilters(f => ({ ...f, payment_mode: e.target.value }))}
-            className="input text-sm"
-          >
-            <option value="">Sab Payment</option>
-            <option value="cash">Cash</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-            <option value="mixed">Mixed</option>
-          </select>
-          <button type="submit" className="btn-primary text-sm">
+          <button type="submit" className="btn-primary text-sm px-4">
             Search
           </button>
         </div>
+        {filters.q.trim() ? (
+          <p className="text-xs text-gray-500">Sab dates mein search hoga — filters band</p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowFilters(v => !v)}
+            className="w-full flex items-center justify-between text-sm py-1.5"
+          >
+            <span className="text-gray-500">Filters: <span className="font-medium text-gray-900">{filterSummary}</span></span>
+            <span className="text-blue-600 text-xs font-medium">{showFilters ? 'Band karo ▲' : 'Badlo ▼'}</span>
+          </button>
+        )}
+        {showFilters && !filters.q.trim() && (
+          <div className="space-y-2 pt-1">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">From</label>
+                <input
+                  type="date"
+                  value={filters.from}
+                  onChange={e => applyFilter({ from: e.target.value })}
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">To</label>
+                <input
+                  type="date"
+                  value={filters.to}
+                  onChange={e => applyFilter({ to: e.target.value })}
+                  className="input text-sm"
+                />
+              </div>
+            </div>
+            <div className={`grid gap-2 ${user.role === 'admin' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {user.role === 'admin' && (
+                <select
+                  value={filters.salesman_id}
+                  onChange={e => applyFilter({ salesman_id: e.target.value })}
+                  className="input text-sm"
+                >
+                  <option value="">All salesmen</option>
+                  {salesmen.map(s => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+              <select
+                value={filters.payment_mode}
+                onChange={e => applyFilter({ payment_mode: e.target.value })}
+                className="input text-sm"
+              >
+                <option value="">All payments</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+            {filtersChanged && (
+              <button
+                type="button"
+                onClick={() => applyFilter({ ...defaultFilters(), q: '' })}
+                className="text-sm font-medium text-blue-600 py-1"
+              >
+                Reset — sirf aaj ke bills
+              </button>
+            )}
+          </div>
+        )}
       </form>
 
       {loading ? (

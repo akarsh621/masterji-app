@@ -150,14 +150,14 @@ export default function Dashboard() {
       </div>
 
       {view === 'month' && (
-        <div className="flex items-center justify-center gap-4 mb-4">
-          <button onClick={() => setMonth(prevMonth(month))} className="text-xl text-blue-600 px-3 min-h-[44px]" aria-label="Pichla mahina">←</button>
-          <h3 className="text-lg font-bold text-gray-800 min-w-[180px] text-center">{monthLabel(month)}</h3>
+        <div className="flex items-center justify-center gap-1 -mt-1 mb-3">
+          <button onClick={() => setMonth(prevMonth(month))} className="text-base text-blue-600 px-3 py-1" aria-label="Previous month">←</button>
+          <span className="text-sm font-semibold text-gray-800 min-w-[120px] text-center">{monthLabel(month)}</span>
           <button
             onClick={() => month < thisMonth && setMonth(nextMonth(month))}
             disabled={month >= thisMonth}
-            className={`text-xl px-3 min-h-[44px] ${month < thisMonth ? 'text-blue-600' : 'text-gray-300 cursor-not-allowed'}`}
-            aria-label="Agla mahina"
+            className={`text-base px-3 py-1 ${month < thisMonth ? 'text-blue-600' : 'text-gray-300 cursor-not-allowed'}`}
+            aria-label="Next month"
           >→</button>
         </div>
       )}
