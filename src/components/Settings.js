@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
+import LoadError from '@/components/LoadError';
 
 const GROUP_LABELS = { women: 'Ladies', kids: 'Kids', men: 'Gents', other: 'Other' };
 
@@ -40,6 +41,7 @@ export default function Settings() {
 function SalesTeamSettings() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -50,9 +52,10 @@ function SalesTeamSettings() {
 
   const fetchUsers = () => {
     setLoading(true);
+    setLoadErr('');
     api.getUsers()
       .then(d => setUsers(d.users.filter(u => u.role === 'salesman')))
-      .catch(() => {})
+      .catch(err => setLoadErr(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -112,6 +115,7 @@ function SalesTeamSettings() {
 
   return (
     <div>
+      {loadErr && <LoadError message={loadErr} onRetry={fetchUsers} />}
       {error && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
 
       <div className="flex items-center justify-between mb-3">
@@ -213,6 +217,7 @@ function SalesTeamSettings() {
 function CategorySettings() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newGroup, setNewGroup] = useState('women');
@@ -222,9 +227,10 @@ function CategorySettings() {
 
   const fetchCategories = () => {
     setLoading(true);
+    setLoadErr('');
     api.getCategories(true)
       .then(d => setCategories(d.categories))
-      .catch(() => {})
+      .catch(err => setLoadErr(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -270,6 +276,7 @@ function CategorySettings() {
 
   return (
     <div>
+      {loadErr && <LoadError message={loadErr} onRetry={fetchCategories} />}
       {error && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
 
       <div className="flex items-center justify-between mb-3">
@@ -360,6 +367,7 @@ function CategorySettings() {
 function AdminSettings() {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newUsername, setNewUsername] = useState('');
@@ -373,9 +381,10 @@ function AdminSettings() {
 
   const fetchAdmins = () => {
     setLoading(true);
+    setLoadErr('');
     api.getUsers()
       .then(d => setAdmins(d.users.filter(u => u.role === 'admin')))
-      .catch(() => {})
+      .catch(err => setLoadErr(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -425,6 +434,7 @@ function AdminSettings() {
 
   return (
     <div>
+      {loadErr && <LoadError message={loadErr} onRetry={fetchAdmins} />}
       {error && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
       {success && <div className="mb-3 p-2 bg-green-50 text-green-700 rounded text-sm">{success}</div>}
 

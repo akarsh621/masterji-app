@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth';
 import { api } from '@/lib/api-client';
+import LoadError from '@/components/LoadError';
 import CashOutForm from './CashOutForm';
 import DeltaBadge from '@/components/DeltaBadge';
 import { getISTDateInputValue, REASON_LABELS } from '@/lib/ui-utils';
@@ -31,26 +32,35 @@ export default function TodaySummary() {
       .catch(() => {});
   };
 
+  const [loadError, setLoadError] = useState('');
+
   const fetchData = () => {
     setLoading(true);
     api.getDashboard({ view: 'today' })
-      .then(setData)
-      .catch(() => {})
+      .then(d => { setData(d); setLoadError(''); })
+      .catch(err => setLoadError(err.message))
       .finally(() => setLoading(false));
     if (isAdmin) fetchCashOutEntries();
   };
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+    // Refresh every 30s, but not while the phone is on another app (saves data
+    // and battery); catch up as soon as the app is visible again.
+    const interval = setInterval(() => { if (!document.hidden) fetchData(); }, 30000);
+    const onVisible = () => { if (!document.hidden) fetchData(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   if (loading && !data) {
     return <div className="text-center py-8 text-gray-500">Loading...</div>;
   }
 
-  if (!data) return null;
+  if (!data) return loadError ? <LoadError message={loadError} onRetry={fetchData} /> : null;
 
   const { summary, previous_summary, categoryBreakdown, salesmanBreakdown } = data;
   const prev = previous_summary || {};

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth';
 import { api } from '@/lib/api-client';
+import LoadError from '@/components/LoadError';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -15,23 +16,31 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [salesmenError, setSalesmenError] = useState('');
+  const loadSalesmen = () => {
+    setSalesmenError('');
+    api.getSalesmen().then(d => setSalesmen(d.salesmen || [])).catch(err => setSalesmenError(err.message));
+  };
+
   useEffect(() => {
-    api.getSalesmen().then(d => setSalesmen(d.salesmen)).catch(() => {});
+    loadSalesmen();
   }, []);
 
+  // Functional updates so two quick taps on a slow phone never drop a digit.
   const handlePinInput = (digit) => {
-    if (pin.length < 4) {
-      const newPin = pin + digit;
-      setPin(newPin);
-      if (newPin.length === 4 && selectedSalesman) {
-        handleSalesmanLogin(selectedSalesman, newPin);
-      }
-    }
+    setPin(prev => (prev.length < 4 ? prev + digit : prev));
   };
 
   const handlePinDelete = () => {
-    setPin(pin.slice(0, -1));
+    setPin(prev => prev.slice(0, -1));
   };
+
+  // Log in as soon as the 4th digit lands.
+  useEffect(() => {
+    if (pin.length === 4 && selectedSalesman && !loading) {
+      handleSalesmanLogin(selectedSalesman, pin);
+    }
+  }, [pin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSalesmanLogin = async (salesman, pinCode) => {
     setError('');
@@ -94,6 +103,7 @@ export default function LoginPage() {
 
           {mode === 'sales' ? (
             <div className="card">
+              {salesmenError && <LoadError message={salesmenError} onRetry={loadSalesmen} />}
               <div className="grid grid-cols-1 gap-2 mb-4">
                 {salesmen.map(s => (
                   <button

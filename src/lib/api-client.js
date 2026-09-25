@@ -14,27 +14,65 @@ function getToken() {
   return localStorage.getItem('masterji_token');
 }
 
+const TIMEOUT_MS = 20000;
+
+// status 0 means the request never got an answer (no internet or timed out),
+// so the caller can't know whether the server acted on it.
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export const UNAUTHORIZED_EVENT = 'masterji:unauthorized';
+
 export async function apiRequest(endpoint, options = {}) {
+  const { timeout = TIMEOUT_MS, rawResponse, ...fetchOptions } = options;
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
-
-  if (options.rawResponse) return res;
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.error || 'Kuch gadbad ho gayi');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, { ...fetchOptions, headers, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err?.name === 'AbortError') {
+      throw new ApiError('Internet slow hai — jawab nahi aaya. Dobara try karo', 0);
+    }
+    throw new ApiError('Internet nahi mil raha — connection check karke dobara try karo', 0);
   }
 
+  // Login expired or user deactivated: send everyone back to the login screen.
+  // (Wrong PIN on the login screen itself is a normal 401, not a logout.)
+  if (res.status === 401 && token && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+
+  if (rawResponse) {
+    clearTimeout(timer);
+    return res;
+  }
+
+  const isJson = (res.headers.get('content-type') || '').includes('application/json');
+  const data = isJson ? await res.json().catch(() => null) : null;
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    const fallback = res.status >= 500 || !isJson
+      ? 'Server se jawab nahi aaya — thodi der baad try karo'
+      : 'Kuch gadbad ho gayi';
+    throw new ApiError(data?.error || fallback, res.status);
+  }
+  if (data === null) {
+    throw new ApiError('Server se sahi jawab nahi aaya — dobara try karo', res.status);
+  }
   return data;
 }
 
@@ -90,10 +128,7 @@ export const api = {
 
 
   exportCSV: (params) => {
-    const token = getToken();
     const qs = new URLSearchParams(params).toString();
-    return fetch(`${API_BASE}/export?${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    return apiRequest(`/export?${qs}`, { rawResponse: true, timeout: 60000 });
   },
 };

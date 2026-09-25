@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth';
 import { api, newRequestId } from '@/lib/api-client';
+import { loadDraft, saveDraft, clearDraft } from '@/lib/bill-draft';
+import LoadError from '@/components/LoadError';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
 
@@ -63,7 +65,7 @@ function formatBackdateLabel(ymd) {
   return `${d} ${monthNames[dt.getUTCMonth()]} ${y}`;
 }
 
-export default function NewBill({ prefillData, onPrefillConsumed }) {
+export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [salesmen, setSalesmen] = useState([]);
@@ -94,6 +96,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   const [splitAmount, setSplitAmount] = useState('');
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState('none');
+  const [editingTotal, setEditingTotal] = useState(false);
+  // Set while correcting a saved bill via "Bill badlo": { id, bill_number }.
+  const [replacesBill, setReplacesBill] = useState(null);
   const [notes, setNotes] = useState('');
   const [showNotes, setShowNotes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -104,8 +109,12 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   // One id per version of this bill: a plain retry reuses it (so a lost
   // response can't create a duplicate); any edit to the bill gets a fresh one.
   const billRequestId = useRef(newRequestId());
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftLoaded = useRef(false);
 
-  useEffect(() => {
+  const [categoriesError, setCategoriesError] = useState('');
+  const loadCategories = () => {
+    setCategoriesError('');
     api.getCategories().then(d => {
       setCategories(d.grouped);
       const flat = [];
@@ -115,7 +124,11 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         }
       }
       setFlatCategories(flat);
-    }).catch(() => {});
+    }).catch(err => setCategoriesError(err.message));
+  };
+
+  useEffect(() => {
+    loadCategories();
     api.getSalesmen().then(d => {
       setSalesmen(d.salesmen || []);
       if (!isAdmin && user?.id) {
@@ -135,18 +148,86 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         setSplitMode(prefillData.payments[1].mode);
         setSplitAmount(String(prefillData.payments[1].amount));
       }
-      if (prefillData.notes) setNotes(prefillData.notes);
+      if (prefillData.notes) { setNotes(prefillData.notes); setShowNotes(true); }
+      setReplacesBill(prefillData.replaces || null);
+      if (prefillData.salesman_id) setSelectedSalesmanId(prefillData.salesman_id);
+      if (prefillData.final_price) {
+        setDiscountMode('final');
+        setDiscountInput(String(prefillData.final_price));
+      } else {
+        setDiscountMode('none');
+        setDiscountInput('');
+      }
+      setDraftRestored(false);
       setScreen('items');
       if (onPrefillConsumed) onPrefillConsumed();
     }
   }, [prefillData, flatCategories]);
+
+  useEffect(() => {
+    if (draftLoaded.current || !user?.id) return;
+    draftLoaded.current = true;
+    if (prefillData) return;
+    const d = loadDraft(user.id);
+    if (!d || !d.items?.length) return;
+    setItems(d.items);
+    setDiscountInput(d.discountInput || '');
+    setDiscountMode(d.discountMode || 'none');
+    setPrimaryMode(d.primaryMode || null);
+    setSplitEnabled(!!d.splitEnabled);
+    setSplitMode(d.splitMode || 'upi');
+    setSplitAmount(d.splitAmount || '');
+    setNotes(d.notes || '');
+    setShowNotes(!!d.notes);
+    if (d.selectedSalesmanId) setSelectedSalesmanId(d.selectedSalesmanId);
+    setBackdateValue(d.backdateValue || '');
+    setReplacesBill(d.replacesBill || null);
+    setDraftRestored(true);
+  }, [user?.id, prefillData]);
+
+  useEffect(() => {
+    if (!draftLoaded.current || !user?.id) return;
+    if (items.length === 0) {
+      clearDraft(user.id);
+    } else {
+      saveDraft(user.id, {
+        items, discountInput, discountMode, primaryMode, splitEnabled, splitMode,
+        splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill,
+      });
+    }
+    if (onDraftChange) onDraftChange(items.length > 0);
+  }, [user?.id, items, discountInput, discountMode, primaryMode, splitEnabled, splitMode, splitAmount, notes, selectedSalesmanId, backdateValue, replacesBill, onDraftChange]);
+
+  // Android Back on the Payment step goes back to the items, not out of the app.
+  useEffect(() => {
+    if (screen !== 'payment') return;
+    window.history.pushState({ mjPayment: true }, '');
+    const onPop = () => setScreen('items');
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (window.history.state?.mjPayment) window.history.back();
+    };
+  }, [screen]);
+
+  // Warn before closing / reloading the page with an unsaved bill.
+  useEffect(() => {
+    if (items.length === 0) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [items.length]);
 
   const getSelectedCategory = () => flatCategories.find(c => c.id === selectedCategoryId);
 
   // Live calculation from MRP + Discount %
   const parsedMrp = parseFloat(mrpInput) || 0;
   const parsedDiscPerc = parseFloat(discPercInput) || 0;
-  const computedSellingPrice = parsedMrp > 0 ? Math.round(parsedMrp * (1 - parsedDiscPerc / 100)) : 0;
+  const discountInvalid = parsedDiscPerc < 0 || parsedDiscPerc >= 100;
+  // Rounded to whole rupees, but never above the MRP (e.g. MRP 499.5 at 0% stays 499.5).
+  const computedSellingPrice = parsedMrp > 0 && !discountInvalid
+    ? Math.min(Math.round(parsedMrp * (1 - parsedDiscPerc / 100)), parsedMrp)
+    : 0;
 
   const addItem = () => {
     const cat = getSelectedCategory();
@@ -174,21 +255,28 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
     setItems(prev => prev.filter((_, i) => i !== index));
   };
 
+  // The tapped number is the line total, so the edit is the new line total.
   const commitPriceEdit = (index) => {
-    const newPrice = Math.round(parseFloat(editPriceInput) || 0);
+    const newTotal = Math.round(parseFloat(editPriceInput) || 0);
     const item = items[index];
-    if (!item || newPrice <= 0 || newPrice > item.mrp) {
-      setEditingItemIdx(null);
-      setEditPriceInput('');
-      return;
-    }
-    setItems(prev => prev.map((it, i) => {
-      if (i !== index) return it;
-      const discPerc = it.mrp > 0 ? Math.round((1 - newPrice / it.mrp) * 100) : 0;
-      return { ...it, price_per_piece: newPrice, discount_percent: discPerc, amount: newPrice * it.quantity };
-    }));
     setEditingItemIdx(null);
     setEditPriceInput('');
+    if (!item || !editPriceInput) return;
+    if (newTotal <= 0) {
+      setError('Price 0 se zyada hona chahiye');
+      return;
+    }
+    if (newTotal > item.mrp * item.quantity) {
+      setError(`Price MRP (₹${(item.mrp * item.quantity).toLocaleString('en-IN')}) se zyada nahi ho sakta`);
+      return;
+    }
+    setError('');
+    setItems(prev => prev.map((it, i) => {
+      if (i !== index) return it;
+      const perPiece = Math.round((newTotal / it.quantity) * 100) / 100;
+      const discPerc = it.mrp > 0 ? Math.round((1 - perPiece / it.mrp) * 100) : 0;
+      return { ...it, price_per_piece: perPiece, discount_percent: discPerc, amount: newTotal };
+    }));
   };
 
   const mrpTotal = items.reduce((s, i) => s + (i.mrp * i.quantity), 0);
@@ -201,15 +289,15 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   let billDiscountPercent = 0;
   const rawBillDiscount = parseFloat(discountInput) || 0;
 
-  if (discountMode === 'percent') {
-    billDiscountPercent = Math.min(Math.round(rawBillDiscount), 100);
-    billDiscountAmount = Math.round(sellingTotal * (billDiscountPercent / 100));
-  } else if (discountMode === 'final' && rawBillDiscount > 0 && rawBillDiscount < sellingTotal) {
+  if (discountMode === 'final' && rawBillDiscount > 0 && rawBillDiscount < sellingTotal) {
     billDiscountAmount = Math.round(sellingTotal - rawBillDiscount);
     billDiscountPercent = sellingTotal > 0 ? Math.round((billDiscountAmount / sellingTotal) * 100) : 0;
   }
 
   const total = sellingTotal - billDiscountAmount;
+  // One-tap round figures below the price: nearest ₹10, ₹50 and ₹100 below.
+  const roundOffOptions = [...new Set([10, 50, 100].map(step => Math.floor((sellingTotal - 1) / step) * step))]
+    .filter(v => v > 0);
   const totalDiscount = itemDiscount + billDiscountAmount;
   const totalDiscountPercent = mrpTotal > 0 ? Math.round((totalDiscount / mrpTotal) * 100) : 0;
 
@@ -235,6 +323,27 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       { mode: primaryMode, amount: primaryAmt },
       { mode: splitMode, amount: splitAmt },
     ];
+  };
+
+  const resetBill = () => {
+    setItems([]);
+    setDiscountInput('');
+    setDiscountMode('none');
+    setEditingTotal(false);
+    setNotes('');
+    setShowNotes(false);
+    setPrimaryMode(null);
+    setPaymentModeMissing(false);
+    setSplitEnabled(false);
+    setSplitAmount('');
+    setBackdateValue('');
+    setBackdateOpen(false);
+    setSelectedCategoryId(null);
+    setError('');
+    setScreen('items');
+    setDraftRestored(false);
+    setReplacesBill(null);
+    clearDraft(user?.id);
   };
 
   const submitBill = async () => {
@@ -266,31 +375,26 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         notes,
         client_request_id: billRequestId.current,
       };
+      if (replacesBill) {
+        billPayload.replaces_bill_id = replacesBill.id;
+      }
       if (selectedSalesmanId) {
         billPayload.salesman_id = selectedSalesmanId;
       }
-      if (backdateValue && backdateValue !== todayISTYmd()) {
+      if (!replacesBill && backdateValue && backdateValue !== todayISTYmd()) {
         billPayload.bill_date = backdateValue;
       }
       const result = await api.createBill(billPayload);
       setSuccess(result);
-      setItems([]);
-      setDiscountInput('');
-      setDiscountMode('none');
-      setNotes('');
-      setShowNotes(false);
-      setPrimaryMode(null);
-      setPaymentModeMissing(false);
-      setSplitEnabled(false);
-      setSplitAmount('');
-      setBackdateValue('');
-      setBackdateOpen(false);
-      setScreen('items');
+      resetBill();
+      setTimeout(() => { submitLock.current = false; }, 2000);
     } catch (err) {
-      setError(err.message);
+      setError(err.status === 0
+        ? 'Internet ki wajah se pata nahi chala bill save hua ya nahi. "Bill Save Karo" dobara dabao — bill do baar nahi banega.'
+        : err.message);
+      submitLock.current = false;
     } finally {
       setSubmitting(false);
-      setTimeout(() => { submitLock.current = false; }, 2000);
     }
   };
 
@@ -317,6 +421,9 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
         <div className="text-5xl mb-4">✓</div>
         <h2 className="text-xl font-bold text-green-700 mb-2">Bill Ban Gaya!</h2>
         <p className="text-gray-600 mb-1">{success.bill_number}</p>
+        {success.replaces_bill_number && (
+          <p className="text-sm text-amber-700 mb-1">{success.replaces_bill_number} ki jagah</p>
+        )}
         {success.is_backdated && success.bill_date && (
           <div className="mb-2 inline-block px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 text-xs font-semibold">
             Backdated: {formatBackdateLabel(success.bill_date)}
@@ -365,6 +472,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
   }
 
   if (!categories) {
+    if (categoriesError) return <LoadError message={categoriesError} onRetry={loadCategories} />;
     return <div className="text-center py-8 text-gray-500">Loading...</div>;
   }
 
@@ -377,6 +485,32 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
     return (
       <div>
         <h2 className="text-lg font-bold mb-3">Naya Bill</h2>
+
+        {replacesBill && (
+          <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="text-sm text-amber-900">
+              <span className="font-semibold">{replacesBill.bill_number}</span> badal rahe ho — save karne par purana bill cancel ho jayega.
+            </div>
+            <button
+              onClick={resetBill}
+              className="mt-2 text-sm font-medium text-amber-800 border border-amber-300 bg-white rounded-lg px-3 py-2 min-h-[40px]"
+            >
+              Badalna band karo
+            </button>
+          </div>
+        )}
+
+        {draftRestored && !replacesBill && items.length > 0 && (
+          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between gap-3">
+            <span className="text-sm text-blue-800">Pichla bill wapas aa gaya</span>
+            <button
+              onClick={resetBill}
+              className="text-sm font-medium text-blue-700 border border-blue-300 bg-white rounded-lg px-3 py-2 min-h-[40px]"
+            >
+              Naya shuru karo
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="mb-3 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
@@ -452,7 +586,10 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
 
               {/* Live calculation */}
               <div className="text-base font-semibold text-orange-600 min-h-[24px]">
-                {parsedMrp > 0 && parsedDiscPerc > 0 && (
+                {discountInvalid && (
+                  <span className="text-red-600">Discount 0 se 99% ke beech hona chahiye</span>
+                )}
+                {parsedMrp > 0 && parsedDiscPerc > 0 && !discountInvalid && (
                   <>₹{parsedMrp} - {parsedDiscPerc}% = ₹{computedSellingPrice}</>
                 )}
                 {parsedMrp > 0 && parsedDiscPerc === 0 && (
@@ -536,7 +673,7 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                   </div>
                   <button
                     onClick={() => removeItem(idx)}
-                    className="text-red-400 hover:text-red-600 text-[9px] font-medium px-0.5 rounded bg-red-50 hover:bg-red-100 leading-tight"
+                    className="text-red-500 hover:text-red-700 text-xs font-medium px-3 py-2 min-h-[36px] rounded-lg bg-red-50 hover:bg-red-100"
                   >
                     Hatao
                   </button>
@@ -564,11 +701,11 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
                       className="w-20 text-right text-lg font-bold text-gray-900 border border-blue-400 rounded px-1 py-0 bg-blue-50 outline-none"
                       autoFocus
                       min="1"
-                      max={String(item.mrp)}
+                      max={String(item.mrp * item.quantity)}
                     />
                   ) : (
                     <span
-                      onClick={() => { setEditingItemIdx(idx); setEditPriceInput(String(item.price_per_piece)); }}
+                      onClick={() => { setEditingItemIdx(idx); setEditPriceInput(String(item.amount)); }}
                       className="text-lg font-bold text-gray-900 border-b border-dashed border-gray-400 cursor-pointer"
                     >
                       ₹{item.amount.toLocaleString('en-IN')}
@@ -730,110 +867,72 @@ export default function NewBill({ prefillData, onPrefillConsumed }) {
       )}
 
       <div className="card space-y-3">
-        {/* Bill-level discount */}
-        {discountMode === 'none' ? (
-          <button
-            onClick={() => setDiscountMode('final')}
-            className="w-full py-2.5 rounded-lg text-sm font-medium border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors"
-          >
-            Final Price Set Karo?
-          </button>
-        ) : (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Final Price Set Karo</span>
-              <button
-                onClick={() => { setDiscountMode('none'); setDiscountInput(''); }}
-                className="text-red-500 hover:text-red-700 text-xs font-medium px-1.5 py-0.5 rounded bg-red-50 hover:bg-red-100"
-              >
-                Hatao
+        {/* Total — tap to set a final price (same gesture as editing an item price) */}
+        <div>
+          {editingTotal ? (
+            <div className="space-y-2">
+              <div className="text-sm text-gray-500">Final price kitna? (₹{sellingTotal.toLocaleString('en-IN')} se kam)</div>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={discountInput}
+                onChange={e => { setDiscountMode('final'); setDiscountInput(e.target.value); }}
+                onKeyDown={e => { if (e.key === 'Enter') setEditingTotal(false); }}
+                className="input text-2xl font-bold"
+                autoFocus
+              />
+              {parseFloat(discountInput) > sellingTotal && (
+                <div className="text-sm text-red-600">₹{sellingTotal.toLocaleString('en-IN')} se zyada nahi ho sakta</div>
+              )}
+              <div className="flex gap-2">
+                {roundOffOptions.map(v => (
+                  <button
+                    key={v}
+                    onClick={() => { setDiscountMode('final'); setDiscountInput(String(v)); setEditingTotal(false); }}
+                    className={`flex-1 py-2.5 min-h-[44px] rounded-lg border text-base font-medium ${
+                      Number(discountInput) === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700'
+                    }`}
+                  >
+                    ₹{v.toLocaleString('en-IN')}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setEditingTotal(false)} className="btn-secondary w-full py-2.5">
+                Theek hai
               </button>
             </div>
-            <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg mb-2">
-              <button
-                onClick={() => { setDiscountMode('final'); setDiscountInput(''); }}
-                className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  discountMode === 'final' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'
-                }`}
-              >
-                Final ₹
-              </button>
-              <button
-                onClick={() => { setDiscountMode('percent'); setDiscountInput(''); }}
-                className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  discountMode === 'percent' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'
-                }`}
-              >
-                % Off
-              </button>
-            </div>
-            {discountMode === 'final' && (
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={discountInput}
-                  onChange={e => setDiscountInput(e.target.value)}
-                  placeholder={`Selling ₹${sellingTotal} — final kitna?`}
-                  className="input flex-1"
-                  min="1"
-                  max={String(sellingTotal)}
-                  autoFocus
-                />
+          ) : (
+            <button
+              onClick={() => {
+                setDiscountMode('final');
+                setDiscountInput(String(billDiscountAmount > 0 ? total : sellingTotal));
+                setEditingTotal(true);
+              }}
+              className="w-full flex items-baseline justify-between text-left"
+            >
+              <span className="text-3xl font-bold">
+                Total: <span className="border-b-2 border-dashed border-gray-400">₹{displayTotal.toLocaleString('en-IN')}</span>
+              </span>
+              <span className="text-sm font-medium text-blue-600">✎ Badlo</span>
+            </button>
+          )}
+          {!editingTotal && (billDiscountAmount > 0 || cashRoundOff > 0) && (
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-sm text-gray-600">
+                {billDiscountAmount > 0 && <>₹{sellingTotal.toLocaleString('en-IN')} se ₹{billDiscountAmount.toLocaleString('en-IN')} kam kiya</>}
+                {billDiscountAmount > 0 && cashRoundOff > 0 && ' · '}
+                {cashRoundOff > 0 && <>₹{cashRoundOff} round off</>}
+              </span>
+              {billDiscountAmount > 0 && (
                 <button
-                  onClick={e => { e.target.closest('div').querySelector('input')?.blur(); }}
-                  className="px-3 py-2 bg-orange-600 text-white rounded-lg font-medium text-xs hover:bg-orange-700 active:bg-orange-800 transition-colors"
+                  onClick={() => { setDiscountMode('none'); setDiscountInput(''); }}
+                  className="text-sm font-medium text-red-600 px-3 py-2 min-h-[36px]"
                 >
-                  Lagao
+                  Hatao
                 </button>
-              </div>
-            )}
-            {discountMode === 'percent' && (
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={discountInput}
-                  onChange={e => setDiscountInput(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Jaise 10, 15, 20"
-                  className="input flex-1"
-                  min="0"
-                  max="100"
-                  step="1"
-                  autoFocus
-                />
-                <button
-                  onClick={e => { e.target.closest('div').querySelector('input')?.blur(); }}
-                  className="px-3 py-2 bg-orange-600 text-white rounded-lg font-medium text-xs hover:bg-orange-700 active:bg-orange-800 transition-colors"
-                >
-                  Lagao
-                </button>
-              </div>
-            )}
-            {billDiscountAmount > 0 && (
-              <div className="mt-2 p-2.5 bg-orange-50 border border-orange-200 rounded-lg">
-                <div className="text-sm text-gray-600">
-                  ₹{sellingTotal.toLocaleString('en-IN')} se <span className="font-bold text-orange-700">₹{billDiscountAmount.toLocaleString('en-IN')} off</span>
-                </div>
-                <div className="text-lg font-bold text-green-700 mt-0.5">
-                  Final: ₹{total.toLocaleString('en-IN')}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Total discount + final total */}
-        <div className="pt-2 border-t border-gray-200">
-          {totalDiscount > 0 && (
-            <div className="text-sm font-semibold text-orange-600 mb-0.5">
-              Total Discount: ₹{totalDiscount.toLocaleString('en-IN')} ({totalDiscountPercent}% off MRP)
+              )}
             </div>
           )}
-          <div className="text-3xl font-bold">
-            Total: ₹{displayTotal.toLocaleString('en-IN')}
-            {cashRoundOff > 0 && (
-              <span className="text-xs text-gray-400 font-normal ml-2">₹{cashRoundOff} round off</span>
-            )}
-          </div>
         </div>
 
         {/* Payment buttons */}

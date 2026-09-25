@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb, generateBillNumber, updateCashDrawer } from '@/lib/db';
+import { getDb, generateBillNumber, updateCashDrawer, getISTNow } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { isValidDate, todayIST, daysBetweenYMD } from '@/lib/date-utils';
 
@@ -9,6 +9,14 @@ const VALID_PAYMENT_MODES = new Set(['cash', 'upi', 'card']);
 const VALID_FILTER_MODES = new Set(['cash', 'upi', 'card', 'mixed']);
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const BACKDATE_MAX_DAYS = 30;
+const SALESMAN_EDIT_MINUTES = 15; // same window as cancelling a bill
+
+class ReplaceError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function round2(value) {
   return Math.round(value * 100) / 100;
@@ -34,11 +42,13 @@ export async function POST(request) {
     const hasDiscountAmount = typeof body?.discount_amount === 'number';
     const discount_amount_input = Number(body?.discount_amount ?? 0);
     const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
+    // "Bill badlo": this bill replaces an existing one (cancel + reissue in one step).
+    const replacesBillId = body?.replaces_bill_id ? Number(body.replaces_bill_id) : null;
     let notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
     const billType = 'sale';
     const originalBillId = null;
 
-    const billDateInput = typeof body?.bill_date === 'string' ? body.bill_date.trim() : '';
+    const billDateInput = !replacesBillId && typeof body?.bill_date === 'string' ? body.bill_date.trim() : '';
     const today = todayIST();
     let isBackdated = false;
     let backdatedCreatedAt = null;
@@ -175,8 +185,8 @@ export async function POST(request) {
 
     const insertBill = db.prepare(`
       INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode,
-                         salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
+                         salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, replaces_bill_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
     `);
 
     const insertItem = db.prepare(`
@@ -189,11 +199,25 @@ export async function POST(request) {
       VALUES (?, ?, ?)
     `);
 
+    let replacing = null; // set below, after the duplicate-request check
+
     const createBill = db.transaction((billNumber) => {
+      if (replacing) {
+        // Cancel the old bill in the same transaction; if someone cancelled it
+        // meanwhile, nothing is saved.
+        const cancelled = db.prepare('UPDATE bills SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+          .run(getISTNow(), replacing.id);
+        if (cancelled.changes === 0) throw new ReplaceError('Ye bill pehle hi cancel ho chuka hai', 409);
+        db.prepare("UPDATE print_queue SET status = 'failed' WHERE bill_id = ? AND status = 'pending'").run(replacing.id);
+      }
+
+      // A correction keeps the original bill's date and backdated status.
+      const billIsBackdated = replacing ? !!replacing.is_backdated : isBackdated;
+      const createdAt = replacing ? replacing.created_at : (isBackdated ? backdatedCreatedAt : null);
       const billResult = insertBill.run(
         billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode,
-        effectiveSalesmanId, notes, billType, originalBillId, isBackdated ? 1 : 0, clientRequestId,
-        isBackdated ? backdatedCreatedAt : null
+        effectiveSalesmanId, notes, billType, originalBillId, billIsBackdated ? 1 : 0, clientRequestId,
+        replacing ? replacing.id : null, createdAt
       );
       const billId = billResult.lastInsertRowid;
 
@@ -205,13 +229,21 @@ export async function POST(request) {
         insertPayment.run(billId, p.mode, p.amount);
       }
 
-      if (!isBackdated) {
-        const cashAmount = normalizedPayments
-          .filter(p => p.mode === 'cash')
-          .reduce((s, p) => s + p.amount, 0);
-        if (cashAmount > 0) {
-          updateCashDrawer(db, billType === 'return' ? -cashAmount : cashAmount);
+      const cashAmount = normalizedPayments
+        .filter(p => p.mode === 'cash')
+        .reduce((s, p) => s + p.amount, 0);
+      if (replacing) {
+        // Only the difference moves the drawer (₹960 cash corrected to ₹900 cash
+        // is -₹60), and only if the original bill ever touched the drawer.
+        if (!replacing.is_backdated) {
+          const oldCash = db.prepare(
+            "SELECT COALESCE(SUM(amount), 0) AS cash FROM bill_payments WHERE bill_id = ? AND mode = 'cash'"
+          ).get(replacing.id).cash;
+          const delta = Math.round((cashAmount - oldCash) * 100) / 100;
+          if (delta !== 0) updateCashDrawer(db, delta);
         }
+      } else if (!isBackdated && cashAmount > 0) {
+        updateCashDrawer(db, cashAmount);
       }
 
       return { billId, billNumber };
@@ -232,6 +264,40 @@ export async function POST(request) {
 
     const already = findExisting();
     if (already) return existingResponse(already);
+
+    if (replacesBillId) {
+      replacing = db.prepare('SELECT * FROM bills WHERE id = ?').get(replacesBillId);
+      if (!replacing || replacing.deleted_at) {
+        return NextResponse.json({ error: 'Jo bill badalna tha woh nahi mila — shayad pehle hi cancel ho chuka hai' }, { status: 404 });
+      }
+      if (replacing.type !== 'sale') {
+        return NextResponse.json({ error: 'Return bill badla nahi ja sakta' }, { status: 400 });
+      }
+      if (result.user.role !== 'admin') {
+        const createdAt = new Date(replacing.created_at.replace(' ', 'T') + '+05:30');
+        const minutesOld = (Date.now() - createdAt.getTime()) / 60000;
+        if (replacing.salesman_id !== result.user.id) {
+          return NextResponse.json({ error: 'Sirf apna bill badal sakte ho' }, { status: 403 });
+        }
+        if (minutesOld > SALESMAN_EDIT_MINUTES) {
+          return NextResponse.json({ error: `${SALESMAN_EDIT_MINUTES} minute se zyada ho gaye, admin se bolo` }, { status: 403 });
+        }
+      }
+      const activeReturn = db.prepare(
+        "SELECT bill_number FROM bills WHERE original_bill_id = ? AND type = 'return' AND deleted_at IS NULL"
+      ).get(replacing.id);
+      if (activeReturn) {
+        return NextResponse.json({ error: `Is bill ka return (${activeReturn.bill_number}) hua hai — ye bill badla nahi ja sakta` }, { status: 409 });
+      }
+      // Keeps the original salesman unless the bill explicitly names another.
+      if (!requestedSalesmanId) {
+        const original = db.prepare('SELECT id, name FROM users WHERE id = ?').get(replacing.salesman_id);
+        if (original) {
+          effectiveSalesmanId = original.id;
+          effectiveSalesmanName = original.name;
+        }
+      }
+    }
 
     let bill = null;
     let attempts = 0;
@@ -282,12 +348,16 @@ export async function POST(request) {
       payments: normalizedPayments,
       salesman_name: effectiveSalesmanName,
       notes: notes || null,
-      created_at: isBackdated ? backdatedCreatedAt : istNow,
-      is_backdated: isBackdated,
+      created_at: replacing ? replacing.created_at : (isBackdated ? backdatedCreatedAt : istNow),
+      is_backdated: replacing ? !!replacing.is_backdated : isBackdated,
+      replaces_bill_number: replacing ? replacing.bill_number : null,
       bill_date: isBackdated ? billDateInput : null,
     }, { status: 201 });
 
   } catch (err) {
+    if (err instanceof ReplaceError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('Create bill error:', err);
     const message = String(err?.message || '');
     if (message.includes('CHECK constraint failed') || message.includes('FOREIGN KEY constraint failed')) {
@@ -362,11 +432,13 @@ export async function GET(request) {
     ).get(...params);
 
     const bills = db.prepare(`
-      SELECT b.*, u.name as salesman_name
+      SELECT b.*, u.name as salesman_name,
+             (SELECT ob.bill_number FROM bills ob WHERE ob.id = b.original_bill_id) AS original_bill_number,
+             (SELECT rb.bill_number FROM bills rb WHERE rb.id = b.replaces_bill_id) AS replaces_bill_number
       FROM bills b
       JOIN users u ON b.salesman_id = u.id
       WHERE ${whereClause}
-      ORDER BY b.created_at DESC
+      ORDER BY b.created_at DESC, b.id DESC
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset);
 

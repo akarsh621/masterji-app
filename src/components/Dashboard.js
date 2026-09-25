@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api-client';
 import { getISTDateInputValue } from '@/lib/ui-utils';
 import DeltaBadge from '@/components/DeltaBadge';
 import CategoryBreakdown from '@/components/CategoryBreakdown';
+import LoadError from '@/components/LoadError';
 
 export default function Dashboard() {
   const [view, setView] = useState('today');
@@ -15,8 +16,14 @@ export default function Dashboard() {
   const [trendMode, setTrendMode] = useState('weekly');
   const [exporting, setExporting] = useState(false);
 
+  const [loadError, setLoadError] = useState('');
+  const fetchSeq = useRef(0);
+
   const fetchData = (v, from, to) => {
+    // Only the latest request may update the screen (fast Aaj/Hafta/Mahina taps).
+    const seq = ++fetchSeq.current;
     setLoading(true);
+    setLoadError('');
     const params = {};
     if (v === 'custom' && from && to) {
       params.from = from;
@@ -25,9 +32,9 @@ export default function Dashboard() {
       params.view = v || view;
     }
     api.getDashboard(params)
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .then(d => { if (seq === fetchSeq.current) setData(d); })
+      .catch(err => { if (seq === fetchSeq.current) setLoadError(err.message); })
+      .finally(() => { if (seq === fetchSeq.current) setLoading(false); });
   };
 
   useEffect(() => {
@@ -80,14 +87,17 @@ export default function Dashboard() {
         params.to = today;
       }
       const res = await api.exportCSV(params);
+      if (!res.ok) throw new Error('Export nahi hua — dobara try karo');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `masterji-bills-${view}.csv`;
       a.click();
-      URL.revokeObjectURL(url);
-    } catch { } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      alert(err.message || 'Export nahi hua — dobara try karo');
+    } finally {
       setExporting(false);
     }
   };
@@ -96,7 +106,7 @@ export default function Dashboard() {
     return <div className="text-center py-8 text-gray-500">Loading...</div>;
   }
 
-  if (!data) return null;
+  if (!data) return loadError ? <LoadError message={loadError} onRetry={() => fetchData(view, customFrom, customTo)} /> : null;
 
   const { summary, previous_summary, categoryBreakdown, dailyTrend, weeklyTrend, salesmanBreakdown } = data;
   const prev = previous_summary || {};

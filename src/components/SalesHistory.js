@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth';
 import { api, newRequestId } from '@/lib/api-client';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
+import LoadError from '@/components/LoadError';
 import { normalizeSavedBill } from '@/lib/bill-data';
 import { getISTDateInputValue } from '@/lib/ui-utils';
 
@@ -80,8 +81,14 @@ export default function SalesHistory({ onVoidAndRecreate }) {
   const [returning, setReturning] = useState(false);
   const [printStatuses, setPrintStatuses] = useState({});
 
+  const [loadError, setLoadError] = useState('');
+  const fetchSeq = useRef(0);
+
   const fetchBills = (page = 1) => {
+    // Only the latest request may update the list (fast filter/page taps).
+    const seq = ++fetchSeq.current;
     setLoading(true);
+    setLoadError('');
     const params = { page, limit: 20 };
     if (filters.from) params.from = filters.from;
     if (filters.to) params.to = filters.to;
@@ -90,11 +97,12 @@ export default function SalesHistory({ onVoidAndRecreate }) {
 
     api.getBills(params)
       .then(d => {
+        if (seq !== fetchSeq.current) return;
         setBills(d.bills);
         setPagination(d.pagination);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(err => { if (seq === fetchSeq.current) setLoadError(err.message); })
+      .finally(() => { if (seq === fetchSeq.current) setLoading(false); });
   };
 
   useEffect(() => { fetchBills(); }, []);
@@ -114,42 +122,43 @@ export default function SalesHistory({ onVoidAndRecreate }) {
   };
 
   const handleDelete = async (bill) => {
-    const msg = user.role === 'admin'
-      ? `${bill.bill_number} void karna hai? Ye recover nahi hoga.`
-      : `${bill.bill_number} cancel karna hai?`;
-    if (!confirm(msg)) return;
+    if (!confirm(`${bill.bill_number} cancel karna hai? Ye wapas nahi hoga.`)) return;
     try {
       await api.deleteBill(bill.id);
-      fetchBills();
-      if (onVoidAndRecreate) {
-        const shouldRecreate = confirm('Iske badle naya bill banao?');
-        if (shouldRecreate) {
-          onVoidAndRecreate({
-            items: bill.items.map(i => {
-              const pricePerPiece = i.quantity > 0 ? i.amount / i.quantity : 0;
-              const mrp = i.mrp && i.mrp > 0 ? i.mrp : pricePerPiece;
-              const discountPercent = mrp > 0 && pricePerPiece > 0
-                ? Math.round((1 - pricePerPiece / mrp) * 100)
-                : 0;
-              return {
-                category_id: i.category_id,
-                category_name: i.category_name,
-                group_name: i.group_name,
-                mrp,
-                discount_percent: discountPercent,
-                price_per_piece: pricePerPiece,
-                quantity: i.quantity,
-                amount: i.amount,
-              };
-            }),
-            payments: bill.payments || [],
-            notes: bill.notes || '',
-          });
-        }
-      }
+      fetchBills(pagination?.page || 1);
     } catch (err) {
       alert(err.message);
     }
+  };
+
+  // "Bill badlo": open this bill in Naya Bill for correction. The old bill is
+  // only cancelled when the corrected one is saved (in one step on the server).
+  const startBillBadlo = (bill) => {
+    if (!onVoidAndRecreate) return;
+    onVoidAndRecreate({
+      replaces: { id: bill.id, bill_number: bill.bill_number },
+      salesman_id: bill.salesman_id,
+      final_price: bill.discount_amount > 0 ? bill.total : null,
+      items: bill.items.map(i => {
+        const pricePerPiece = i.quantity > 0 ? i.amount / i.quantity : 0;
+        const mrp = i.mrp && i.mrp > 0 ? i.mrp : pricePerPiece;
+        const discountPercent = mrp > 0 && pricePerPiece > 0
+          ? Math.round((1 - pricePerPiece / mrp) * 100)
+          : 0;
+        return {
+          category_id: i.category_id,
+          category_name: i.category_name,
+          group_name: i.group_name,
+          mrp,
+          discount_percent: discountPercent,
+          price_per_piece: pricePerPiece,
+          quantity: i.quantity,
+          amount: i.amount,
+        };
+      }),
+      payments: bill.payments || [],
+      notes: bill.notes || '',
+    });
   };
 
   const startReturn = (bill) => {
@@ -181,7 +190,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
       });
       setReturnBillId(null);
       setReturnItems([]);
-      fetchBills();
+      fetchBills(pagination?.page || 1);
     } catch (err) {
       setReturnError(err.message);
     } finally {
@@ -256,7 +265,9 @@ export default function SalesHistory({ onVoidAndRecreate }) {
       {loading ? (
         <div className="text-center py-8 text-gray-500">Loading...</div>
       ) : bills.length === 0 ? (
-        <div className="text-center py-8 text-gray-400">Koi bill nahi mila</div>
+        loadError
+          ? <LoadError message={loadError} onRetry={() => fetchBills(pagination?.page || 1)} />
+          : <div className="text-center py-8 text-gray-400">Koi bill nahi mila</div>
       ) : (
         <div className="space-y-2">
           {(() => {
@@ -297,6 +308,12 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         </span>
                       )}
                     </div>
+                    {isReturn && bill.original_bill_number && (
+                      <div className="text-xs text-red-600">← {bill.original_bill_number} ka return</div>
+                    )}
+                    {bill.replaces_bill_number && (
+                      <div className="text-xs text-amber-700">{bill.replaces_bill_number} ki jagah</div>
+                    )}
                     <div className="text-xs text-gray-500">
                       {bill.salesman_name} • {formatPayments(bill)}
                       {bill.mrp_total > 0 && bill.mrp_total > bill.total && (
@@ -353,7 +370,15 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                             onClick={() => startReturn(bill)}
                             className="text-xs font-medium text-orange-700 border border-orange-300 bg-orange-50 px-3 py-2 min-h-[44px] rounded-lg hover:bg-orange-100 active:bg-orange-200 transition-colors"
                           >
-                            Return / Exchange
+                            Return
+                          </button>
+                        )}
+                        {!isReturn && (user.role === 'admin' || canSalesmanVoid) && (
+                          <button
+                            onClick={() => startBillBadlo(bill)}
+                            className="text-xs font-medium text-gray-700 border border-gray-300 bg-white px-3 py-2 min-h-[44px] rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                          >
+                            ✎ Bill badlo
                           </button>
                         )}
                         </div>
@@ -364,18 +389,17 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                           Yahan Print Karo
                         </button>
                       </div>
-                      {(user.role === 'admin' || canSalesmanVoid) && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-red-500">Galat hai?</span>
-                          <button
-                            onClick={() => handleDelete(bill)}
-                            className="bg-red-600 text-white text-xs font-medium px-3 py-2 min-h-[44px] rounded-lg hover:bg-red-700 transition-colors"
-                          >
-                            Delete karo
-                          </button>
-                        </div>
-                      )}
                     </div>
+                    {(user.role === 'admin' || canSalesmanVoid) && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <button
+                          onClick={() => handleDelete(bill)}
+                          className="w-full text-sm font-medium text-red-600 border border-red-200 bg-white px-3 py-2 min-h-[44px] rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          Cancel Bill
+                        </button>
+                      </div>
+                    )}
                   </div>
                   );
                 })()}
@@ -453,20 +477,24 @@ export default function SalesHistory({ onVoidAndRecreate }) {
           })()}
 
           {pagination && pagination.pages > 1 && (
-            <div className="flex justify-center gap-2 pt-4">
-              {Array.from({ length: Math.min(pagination.pages, 10) }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  onClick={() => fetchBills(p)}
-                  className={`w-8 h-8 rounded text-sm ${
-                    p === pagination.page
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+            <div className="flex items-center justify-center gap-3 pt-4">
+              <button
+                onClick={() => fetchBills(pagination.page - 1)}
+                disabled={pagination.page <= 1}
+                className="px-4 min-h-[44px] rounded-lg bg-gray-100 text-gray-700 font-medium disabled:opacity-40"
+              >
+                ← Pichla
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {pagination.page} / {pagination.pages}
+              </span>
+              <button
+                onClick={() => fetchBills(pagination.page + 1)}
+                disabled={pagination.page >= pagination.pages}
+                className="px-4 min-h-[44px] rounded-lg bg-gray-100 text-gray-700 font-medium disabled:opacity-40"
+              >
+                Agla →
+              </button>
             </div>
           )}
         </div>

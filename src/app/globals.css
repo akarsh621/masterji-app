@@ -5,6 +5,8 @@
 @layer base {
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
+    /* Stop an accidental pull-down from reloading the page mid-bill. */
+    overscroll-behavior-y: contain;
   }
 }
 
@@ -29,6 +31,19 @@
     @apply w-full border border-gray-300 rounded-lg px-3 py-2
            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
   }
+}
+
+/* Phones: iOS zooms into any input smaller than 16px when tapped, which
+   hides the rest of the bill. Keep every field at 16px+ on small screens. */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Keep the fixed bottom tab bar clear of the phone's gesture bar. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @media print {

@@ -30,6 +30,12 @@ export default function AppShell() {
   const tabs = isAdmin ? ADMIN_TABS : SALES_TABS;
   const [activeTab, setActiveTab] = useState('new-bill');
   const [prefillData, setPrefillData] = useState(null);
+  const [billInProgress, setBillInProgress] = useState(false);
+
+  const handleLogout = () => {
+    if (billInProgress && !window.confirm('Bill abhi save nahi hua hai. Phir bhi logout karein?')) return;
+    logout();
+  };
 
   const handleVoidAndRecreate = useCallback((data) => {
     setPrefillData(data);
@@ -40,9 +46,9 @@ export default function AppShell() {
     setPrefillData(null);
   }, []);
 
+  // Naya Bill is rendered separately and always stays mounted (see below).
   const renderContent = () => {
     switch (activeTab) {
-      case 'new-bill': return <NewBill prefillData={prefillData} onPrefillConsumed={handlePrefillConsumed} />;
       case 'today': return <TodaySummary />;
       case 'dashboard': return <Dashboard />;
       case 'earnings': return <Earnings />;
@@ -65,7 +71,7 @@ export default function AppShell() {
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-blue-700">{user.name}</h1>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="text-xs text-red-500 hover:text-red-700"
             >
               Logout
@@ -90,10 +96,16 @@ export default function AppShell() {
       </header>
 
       <main className="p-4 max-w-2xl mx-auto">
-        {renderContent()}
+        {/* Kept mounted while other tabs are open, so a half-built bill is
+            never lost by glancing at Bill Book or Aaj. Other tabs remount on
+            every visit so they always show fresh data. */}
+        <div hidden={activeTab !== 'new-bill'}>
+          <NewBill prefillData={prefillData} onPrefillConsumed={handlePrefillConsumed} onDraftChange={setBillInProgress} />
+        </div>
+        {activeTab !== 'new-bill' && renderContent()}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 safe-bottom">
         <div className="max-w-2xl mx-auto flex">
           {tabs.map(tab => (
             <button

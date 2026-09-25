@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth';
 import { api, newRequestId } from '@/lib/api-client';
 import CashOutForm from './CashOutForm';
+import LoadError from './LoadError';
 import { REASON_LABELS } from '@/lib/ui-utils';
 
 function formatTime(value) {
@@ -33,8 +34,11 @@ export default function DayClose() {
   const loadedDrawerInput = useRef('');
   const sweepRequestId = useRef(newRequestId());
 
+  const [loadError, setLoadError] = useState('');
+
   const fetchData = () => {
     setLoading(true);
+    setLoadError('');
     api.getHisaab()
       .then(d => {
         setData(d);
@@ -42,7 +46,7 @@ export default function DayClose() {
         loadedDrawerInput.current = String(Math.round(d.cash_drawer));
         setPettyInput(String(Math.round(d.petty_cash_target)));
       })
-      .catch(() => {})
+      .catch(err => setLoadError(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -68,7 +72,7 @@ export default function DayClose() {
   if (loading && !data) {
     return <div className="text-center py-8 text-gray-500">Loading...</div>;
   }
-  if (!data) return null;
+  if (!data) return loadError ? <LoadError message={loadError} onRetry={fetchData} /> : null;
 
   const { cash_drawer, petty_cash_target, cash_in, cash_refunds, cash_out, cash_out_entries, payment_split, sales } = data;
 

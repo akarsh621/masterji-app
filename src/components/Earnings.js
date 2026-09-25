@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api-client';
+import LoadError from '@/components/LoadError';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -95,23 +96,38 @@ export default function Earnings() {
   const [copying, setCopying] = useState(false);
 
   const canGoNext = month < currentMonth;
+  const [loadError, setLoadError] = useState('');
+  const loadSeq = useRef(0);
 
   const loadData = useCallback(async () => {
+    // Only the latest month asked for may fill the screen (fast arrow taps).
+    const seq = ++loadSeq.current;
     setLoading(true);
+    setLoadError('');
     try {
       const [earningsRes, expensesRes] = await Promise.all([
         api.getEarnings(month),
         api.getExpenses(month),
       ]);
+      if (seq !== loadSeq.current) return;
       setData(earningsRes);
       setExpenseData(expensesRes);
     } catch (err) {
-      console.error('Earnings load error:', err);
+      if (seq !== loadSeq.current) return;
+      // Never show a ₹0 P&L when the numbers simply didn't load.
+      setData(null);
+      setExpenseData(null);
+      setLoadError(err.message);
     }
-    setLoading(false);
+    if (seq === loadSeq.current) setLoading(false);
   }, [month]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // A new month starts blank rather than showing the previous month's numbers under its label.
+  useEffect(() => {
+    setData(null);
+    setExpenseData(null);
+    loadData();
+  }, [loadData]);
 
   const handleDelete = async (expense) => {
     if (deleting) return;
@@ -158,18 +174,31 @@ export default function Earnings() {
   const profitDelta = prev ? pnl.net_profit - (prev.pnl?.net_profit || 0) : null;
   const profitDeltaPct = prev?.pnl?.net_profit ? Math.round((profitDelta / Math.abs(prev.pnl.net_profit)) * 100) : null;
 
+  const monthNav = (
+    <div className="flex items-center justify-center gap-4 py-2">
+      <button onClick={() => setMonth(prevMonth(month))} className="text-xl text-blue-600 px-2">←</button>
+      <h2 className="text-lg font-bold text-gray-800 min-w-[180px] text-center">{monthLabel(month)}</h2>
+      <button
+        onClick={() => canGoNext && setMonth(nextMonth(month))}
+        className={`text-xl px-2 ${canGoNext ? 'text-blue-600' : 'text-gray-300 cursor-not-allowed'}`}
+        disabled={!canGoNext}
+      >→</button>
+    </div>
+  );
+
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        {monthNav}
+        <LoadError message={loadError} onRetry={loadData} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Month Navigation */}
-      <div className="flex items-center justify-center gap-4 py-2">
-        <button onClick={() => setMonth(prevMonth(month))} className="text-xl text-blue-600 px-2">←</button>
-        <h2 className="text-lg font-bold text-gray-800 min-w-[180px] text-center">{monthLabel(month)}</h2>
-        <button
-          onClick={() => canGoNext && setMonth(nextMonth(month))}
-          className={`text-xl px-2 ${canGoNext ? 'text-blue-600' : 'text-gray-300 cursor-not-allowed'}`}
-          disabled={!canGoNext}
-        >→</button>
-      </div>
+      {monthNav}
 
       {/* P&L Statement Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -324,6 +353,7 @@ export default function Earnings() {
       {/* Add/Edit Expense Form */}
       {showForm && (
         <ExpenseForm
+          key={editingExpense?.id ?? 'new'}
           month={month}
           expense={editingExpense}
           onClose={() => { setShowForm(false); setEditingExpense(null); }}
