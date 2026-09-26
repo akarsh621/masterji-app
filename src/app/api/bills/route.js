@@ -44,7 +44,7 @@ export async function POST(request) {
     const hasDiscountAmount = typeof body?.discount_amount === 'number';
     const discount_amount_input = Number(body?.discount_amount ?? 0);
     const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
-    // "Bill badlo": this bill replaces an existing one (cancel + reissue in one step).
+    // "Edit Bill": this bill replaces an existing one (cancel + reissue in one step).
     const replacesBillId = body?.replaces_bill_id ? Number(body.replaces_bill_id) : null;
     // Optional customer. Invalid numbers are refused: a half-typed number is
     // worse than none in a customer list.
@@ -299,16 +299,16 @@ export async function POST(request) {
     if (replacesBillId) {
       replacing = db.prepare('SELECT * FROM bills WHERE id = ?').get(replacesBillId);
       if (!replacing || replacing.deleted_at) {
-        return NextResponse.json({ error: 'Jo bill badalna tha woh nahi mila — shayad pehle hi cancel ho chuka hai' }, { status: 404 });
+        return NextResponse.json({ error: 'Jo bill edit karna tha woh nahi mila — shayad pehle hi cancel ho chuka hai' }, { status: 404 });
       }
       if (replacing.type !== 'sale') {
-        return NextResponse.json({ error: 'Return bill badla nahi ja sakta' }, { status: 400 });
+        return NextResponse.json({ error: 'Return bill edit nahi ho sakta' }, { status: 400 });
       }
       if (result.user.role !== 'admin') {
         const createdAt = new Date(replacing.created_at.replace(' ', 'T') + '+05:30');
         const minutesOld = (Date.now() - createdAt.getTime()) / 60000;
         if (replacing.salesman_id !== result.user.id) {
-          return NextResponse.json({ error: 'Sirf apna bill badal sakte ho' }, { status: 403 });
+          return NextResponse.json({ error: 'Sirf apna bill edit kar sakte ho' }, { status: 403 });
         }
         if (minutesOld > SALESMAN_EDIT_MINUTES) {
           return NextResponse.json({ error: `${SALESMAN_EDIT_MINUTES} minute se zyada ho gaye, admin se bolo` }, { status: 403 });
@@ -318,7 +318,7 @@ export async function POST(request) {
         "SELECT bill_number FROM bills WHERE original_bill_id = ? AND type = 'return' AND deleted_at IS NULL"
       ).get(replacing.id);
       if (activeReturn) {
-        return NextResponse.json({ error: `Is bill ka return (${activeReturn.bill_number}) hua hai — ye bill badla nahi ja sakta` }, { status: 409 });
+        return NextResponse.json({ error: `Is bill ka return (${activeReturn.bill_number}) hua hai — ye bill edit nahi ho sakta` }, { status: 409 });
       }
       // Keeps the original salesman unless the bill explicitly names another.
       if (!requestedSalesmanId) {

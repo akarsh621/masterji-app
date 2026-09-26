@@ -15,7 +15,7 @@ This app provides:
 - **Real-time dashboard** with daily/weekly/monthly/custom analytics, category breakdowns (Ladies/Gents/Kids groups), salesman performance, daily and weekly trend charts, and period-over-period comparison
 - **Expense tracking & monthly P&L** (admin-only Earnings tab) -- enter stock purchases, salaries, utilities, other expenses per month; see revenue vs expenses, net profit, profit margin, and month-over-month comparison
 - **Returns** matched to the exact bill line, refunded at what the customer actually paid (Cash or UPI, never Card); salesmen up to 7 days, admin any age
-- **Bill badlo** -- correct a saved bill in one step (old bill cancelled, new one linked, drawer moves only by the difference)
+- **Edit Bill** -- correct a saved bill in one step (old bill cancelled, new one linked, drawer moves only by the difference)
 - **Customers** -- optional mobile + name on a bill; admin Customers screen with visits, spend and CSV export
 - **Persistent cash drawer tracking** (Hisaab) -- every cash event updates the drawer balance in real-time; admin can manually correct if physical count differs; petty cash target tracking; daily sweep for end-of-day cash collection
 - **Print queue** for bill receipts -- "Print Bill" button queues to print agent; fallback browser print available
@@ -81,7 +81,7 @@ app/
 │   │   ├── LoadError.js         # Error message + retry button (reusable)
 │   │   ├── LoginPage.js         # PIN login (salesmen) / password login (admin)
 │   │   ├── NewBill.js           # Multi-step bill creation with salesman selector
-│   │   ├── SalesHistory.js      # Bill listing with search, filters, returns, Bill badlo, cancel
+│   │   ├── SalesHistory.js      # Bill listing with search, filters, returns, Edit Bill, cancel
 │   │   ├── Settings.js          # Admin CRUD for salesmen, categories, admins, customers
 │   │   └── TodaySummary.js      # Salesman's today-at-a-glance view
 │   ├── context/
@@ -149,7 +149,7 @@ Nine tables, all timestamps in IST (UTC+5:30 via SQLite offset). Migrations mana
 | notes | TEXT | Optional free text |
 | is_backdated | INTEGER | 1 = entered for an earlier date; never touches the cash drawer |
 | client_request_id | TEXT | Unique per save attempt, so a retried save never makes a second bill |
-| replaces_bill_id | INTEGER FK | Set on a Bill badlo replacement, pointing at the cancelled bill |
+| replaces_bill_id | INTEGER FK | Set on a Edit Bill replacement, pointing at the cancelled bill |
 | customer_id | INTEGER FK | Household (phone number), nullable |
 | customer_name | TEXT | Name as typed on this bill |
 | deleted_at | DATETIME | Soft delete timestamp (NULL = active) |
@@ -231,7 +231,7 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 | POST | `/api/auth/login` | Public | Login (admin: username+password, salesman: id+pin) |
 | GET | `/api/auth/me` | Bearer | Current user info + DB mode |
 | GET | `/api/auth/salesmen` | Public | List active salesmen names (for login screen + selectors) |
-| POST | `/api/bills` | Bearer | Create bill with items + payments array. `replaces_bill_id` = Bill badlo |
+| POST | `/api/bills` | Bearer | Create bill with items + payments array. `replaces_bill_id` = Edit Bill |
 | GET | `/api/bills` | Bearer | List bills (paginated, filtered, `?q=` search across all dates) -- any date for all users |
 | DELETE | `/api/bills/:id` | Bearer | Soft-delete (admin: any time; salesman: own bills within 15 min) |
 | POST | `/api/bills/:id/return` | Bearer | Return specific lines (salesman: bills up to 7 days old; refund Cash/UPI) |
@@ -357,7 +357,7 @@ The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-s
 | Soft delete for bills | Preserve historical data integrity; deleted bills excluded from analytics |
 | On-bill salesman selector | Any user can reassign a bill to a different salesman before saving |
 | Salesmen: today's figures, any-date bills | Aaj shows today only; Bill Book (records, not analytics) shows any date |
-| Corrections are cancel + reissue | A saved bill is never edited in place; Bill badlo links old and new |
+| Corrections are cancel + reissue | A saved bill is never edited in place; Edit Bill links old and new |
 | Drafts on the phone, not the server | Fast, works when the connection drops, keeps half-built bills out of the DB |
 | Category-first billing flow | Prevents wrong-category mistakes; no auto-select on load, no auto-keyboard |
 | Persistent cash drawer (not daily calculation) | Single `app_state.cash_drawer` value updated atomically by every cash event |

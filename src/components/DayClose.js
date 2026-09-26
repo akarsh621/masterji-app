@@ -222,7 +222,7 @@ export default function DayClose() {
 
           {cash_adjustment !== 0 && (
             <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Pichle bills cancel / badle</span>
+              <span className="text-sm text-gray-600">Pichle bills cancel / edit</span>
               <span className={`text-sm font-medium ${cash_adjustment > 0 ? 'text-green-700' : 'text-red-600'}`}>
                 {cash_adjustment > 0 ? '+' : '-'}₹{Math.round(Math.abs(cash_adjustment)).toLocaleString('en-IN')}
               </span>

@@ -73,7 +73,7 @@ A wrong number destroys trust in the app. Every rule here has a regression test;
 - **The server is the source of truth for money.** It recomputes subtotal, discount, total and checks that payments add up exactly (±₹0.01). Never trust client totals.
 - **`discount_amount` is authoritative** (including 0); `discount_percent` is derived from it.
 - **Every cash event updates `app_state.cash_drawer` in the same transaction** as the operation, rounded to 2 decimals. Backdated bills never touch the drawer -- not when saved, cancelled or corrected.
-- **Bills are never edited or hard-deleted.** Cancel = soft delete (`deleted_at`). Correction = Bill badlo: cancel + reissue in one transaction, linked by `replaces_bill_id`, keeping the original date and salesman; the drawer moves by the cash difference only.
+- **Saved bills are never changed in place or hard-deleted.** Cancel = soft delete (`deleted_at`). Correction = Edit Bill (called "Bill badlo" in older notes): cancel + reissue in one transaction, linked by `replaces_bill_id`, keeping the original date and salesman; the drawer moves by the cash difference only.
 - **A bill with an active return can't be cancelled or corrected** until the return is cancelled.
 - **Returns** are matched to the exact sale line (`orig_bill_item_id`), refunded at the share actually paid (after bill discount and round-off), capped at what was paid, **Cash or UPI only -- never Card**, credited to the original bill's salesman. Salesmen: 7 days; admin: any age.
 - **Idempotency:** every money-changing POST (bills, returns, cash-out) carries a `client_request_id` (UNIQUE). A repeat returns the existing record. The client makes a new id when the bill changes, and reuses it on a plain retry.

@@ -44,7 +44,7 @@ Bottom tabs differ by role. Admin also has **⚙ Settings** in the header.
 | **Dashboard** | -- | ✓ | Aaj / Hafta / Mahina (month scroller) / Custom analytics with previous-period comparison, trends, CSV export |
 | **Earnings** | -- | ✓ | Monthly P&L: revenue vs expenses (stock purchase, salaries, utilities, other), expense entry |
 | **Hisaab** | -- | ✓ | Cash drawer: balance, petty cash target, today's cash in/out lines, daily sweep, manual correction, cash-out |
-| **Bill Book** | ✓ | ✓ | All bills, any date. Search (bill no., mobile, customer name, amount) across all dates, collapsible filters. Print, Return, Bill badlo, Cancel Bill |
+| **Bill Book** | ✓ | ✓ | All bills, any date. Search (bill no., mobile, customer name, amount) across all dates, collapsible filters. Print, Return, Edit Bill, Cancel Bill |
 | **Settings** | -- | ✓ | Sales Team (names + visible PINs), Categories, Customers (list, history, CSV), Admin users |
 
 ### 3.1 Making a bill (the core flow)
@@ -59,7 +59,7 @@ Rules that shape this flow:
 
 - **Drafts live on the phone** (`localStorage`, per user, 12-hour expiry). Switching tabs, refreshing, Back, the phone killing Chrome, or an expired login never loses a bill. A restored draft shows "Pichla bill abhi bacha hai" with **Naya Bill**.
 - **Changing items clears the final price, split and payment mode** -- they were chosen for the old amount. Customer and note stay.
-- **Removing the last item resets the whole bill** (except during Bill badlo, which stays in badlo mode).
+- **Removing the last item resets the whole bill** (except during Edit Bill, which stays in edit mode).
 - **Starting over always asks** in an in-app box (phone browsers can skip `window.confirm`).
 - Save is safe to retry: each bill version carries a `client_request_id`, so a timeout + retry never makes two bills.
 
@@ -67,17 +67,17 @@ Rules that shape this flow:
 
 From Bill Book → **Return**. Pick lines and quantities (remaining returnable qty shown). Refund = what the customer actually paid for that line (share after bill discount and round-off). Refund mode **Cash (default) or UPI -- never Card**. Salesmen: bills up to 7 days old; admin: any age. The return is a separate bill of type `return`, linked to the original, credited to the **original bill's salesman**, and shown as "← MJF-0100 ka return". There is no exchange flow: an exchange is a return plus a new bill.
 
-### 3.3 Corrections: Bill badlo and Cancel Bill
+### 3.3 Corrections: Edit Bill and Cancel Bill
 
 A saved bill is never edited in place.
 
-- **Bill badlo** opens the bill pre-filled in Naya Bill ("MJF-0104 badal rahe ho"). On save, one server transaction cancels the old bill and creates the new one (`replaces_bill_id`), keeping the original date and salesman. The drawer moves only by the cash difference. Shown as "MJF-0104 ki jagah" / linked both ways.
+- **Edit Bill** opens the bill pre-filled in Naya Bill ("Bill MJF-0104 edit kar rahe ho", with **Cancel editing**). On save, one server transaction cancels the old bill and creates the new one (`replaces_bill_id`), keeping the original date and salesman. The drawer moves only by the cash difference. Shown as "MJF-0104 ki jagah" / linked both ways.
 - **Cancel Bill** soft-deletes the bill (`deleted_at`) and reverses its cash (unless backdated). Blocked if the bill has an active return ("Pehle iska return bill cancel karo").
 - Permissions for both: salesman only their own bill within 15 minutes; admin any bill.
 
 ### 3.4 Cash drawer (Hisaab)
 
-`app_state.cash_drawer` is one persistent running balance, updated inside the same transaction as every cash event: cash sale (+), cash refund (−), cancelling a cash bill (−), cash-out (−), Bill badlo (± difference), manual correction (set). **Backdated bills never touch it.** Petty cash target = the float left in the drawer after the daily **sweep** (cash-out of type `sweep`). Hisaab shows today's lines, including separate Refund (cash) and Cancelled bill (cash) lines when they exist.
+`app_state.cash_drawer` is one persistent running balance, updated inside the same transaction as every cash event: cash sale (+), cash refund (−), cancelling a cash bill (−), cash-out (−), Edit Bill (± difference), manual correction (set). **Backdated bills never touch it.** Petty cash target = the float left in the drawer after the daily **sweep** (cash-out of type `sweep`). Hisaab shows today's lines, including separate Refund (cash) and Cancelled bill (cash) lines when they exist.
 
 ### 3.5 Reports
 
@@ -89,7 +89,7 @@ A saved bill is never edited in place.
 
 ### 3.6 Customers
 
-Optional on every bill. A **phone number = a household** (family members share one): `customers` holds one row per normalised 10-digit mobile (starts 6-9; `+91`, leading 0, spaces and dashes stripped) with the latest name; each bill also stores the name as typed. Returns and Bill badlo inherit the customer. Admin **Settings → Customers**: searchable list with bills, spend (net of returns), last visit; tap for their bills; CSV export. Internal use only -- no automated messages.
+Optional on every bill. A **phone number = a household** (family members share one): `customers` holds one row per normalised 10-digit mobile (starts 6-9; `+91`, leading 0, spaces and dashes stripped) with the latest name; each bill also stores the name as typed. Returns and Edit Bill inherit the customer. Admin **Settings → Customers**: searchable list with bills, spend (net of returns), last visit; tap for their bills; CSV export. Internal use only -- no automated messages.
 
 ---
 
@@ -192,8 +192,8 @@ src/
       backup/  users/ users/[id]
   components/
     AppShell.js        tabs, header, keeps NewBill mounted, Naya Bill tab = new bill
-    NewBill.js         billing flow (items → payment), drafts, Bill badlo, customer, final price
-    SalesHistory.js    Bill Book: search, filters, returns panel, print, Bill badlo, cancel
+    NewBill.js         billing flow (items → payment), drafts, Edit Bill, customer, final price
+    SalesHistory.js    Bill Book: search, filters, returns panel, print, Edit Bill, cancel
     TodaySummary.js    salesman "Aaj"
     Dashboard.js  Earnings.js  DayClose.js (Hisaab)  Settings.js  Customers.js
     BillPreview.js CashOutForm.js CategoryBreakdown.js DeltaBadge.js LoadError.js LoginPage.js
@@ -232,7 +232,7 @@ railway.json           build/start commands, health check /api/auth/salesmen
 | `customers` | `phone` (unique, 10 digits), `name`, `first_seen_at`, `last_seen_at` |
 | `login_attempts` | failed logins per account + IP (lockouts) |
 
-Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **12**. Notable: v8 money integrity (backdated flag, request ids, Bill badlo link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers, v12 re-credit old returns to the original salesman.
+Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **12**. Notable: v8 money integrity (backdated flag, request ids, Edit Bill link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers, v12 re-credit old returns to the original salesman.
 
 ### 5.3 Security
 
@@ -280,7 +280,7 @@ npm run build && npm start    # production build locally
 |---|---|
 | Naya Bill | New bill |
 | Hatao | Remove |
-| Bill badlo | Correct a saved bill (cancel + reissue) |
+| Edit Bill | Correct a saved bill (cancel + reissue; the saved bill itself is never changed) |
 | Cancel Bill | Void a saved bill (soft delete) |
 | Hisaab | Cash drawer / day close |
 | Aaj / Hafta / Mahina | Today / week / month |
@@ -306,7 +306,7 @@ npm run build && npm start    # production build locally
 ## 9. History in brief
 
 - MVP (early 2026): billing, dashboard, Hisaab, Bill Book, print agent, Earnings.
-- **Project 1 -- Hardening + enhancements (Sept 2026)**: test suite, backups, money-correctness fixes (returns, cancels, split payments, drawer), security (rate limiting, escaping, CSP, permissions), UPI QR removal, never-lose-a-bill drafts, Final Price redesign, Bill badlo, customers, real Bill Book search, report fixes, Bill of Supply wording. Built on branch `feature/project1-hardening`; merged to `main` only at the final build.
+- **Project 1 -- Hardening + enhancements (Sept 2026)**: test suite, backups, money-correctness fixes (returns, cancels, split payments, drawer), security (rate limiting, escaping, CSP, permissions), UPI QR removal, never-lose-a-bill drafts, Final Price redesign, Edit Bill, customers, real Bill Book search, report fixes, Bill of Supply wording. Built on branch `feature/project1-hardening`; merged to `main` only at the final build.
 
 ---
 

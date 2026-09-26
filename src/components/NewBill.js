@@ -89,7 +89,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState('none');
   const [editingTotal, setEditingTotal] = useState(false);
-  // Set while correcting a saved bill via "Bill badlo": { id, bill_number }.
+  // Set while correcting a saved bill via "Edit Bill": { id, bill_number }.
   const [replacesBill, setReplacesBill] = useState(null);
   // Optional customer (builds the customer list). Never required.
   const [customerPhone, setCustomerPhone] = useState('');
@@ -286,7 +286,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
 
   const removeItem = (index) => {
     // Removing the last item ends this bill: nothing from it carries into the next one.
-    // (While correcting a bill via Bill badlo, stay in that mode.)
+    // (While editing a bill (Edit Bill), stay in that mode.)
     if (items.length <= 1 && !replacesBill) {
       resetBill();
       return;
@@ -577,18 +577,18 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
     return (
       <div>
         {confirmBox}
-        <h2 className="text-lg font-bold mb-3">Naya Bill</h2>
+        <h2 className="text-lg font-bold mb-3">{replacesBill ? 'Edit Bill' : 'Naya Bill'}</h2>
 
         {replacesBill && (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="text-sm text-amber-900">
-              <span className="font-semibold">{replacesBill.bill_number}</span> badal rahe ho — save karne par purana bill cancel ho jayega.
+              Bill <span className="font-semibold">{replacesBill.bill_number}</span> edit kar rahe ho — save karne par purana bill cancel ho jayega.
             </div>
             <button
               onClick={resetBill}
               className="mt-2 text-sm font-medium text-amber-800 border border-amber-300 bg-white rounded-lg px-3 py-2 min-h-[40px]"
             >
-              Badalna band karo
+              Cancel editing
             </button>
           </div>
         )}

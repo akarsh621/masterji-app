@@ -160,7 +160,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     }
   };
 
-  // "Bill badlo": open this bill in Naya Bill for correction. The old bill is
+  // "Edit Bill": open this bill in Naya Bill for correction. The old bill is
   // only cancelled when the corrected one is saved (in one step on the server).
   const startBillBadlo = (bill) => {
     if (!onVoidAndRecreate) return;
@@ -431,9 +431,9 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                       notes={nb.notes}
                     />
 
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
+                    <div className="mt-3 pt-2 border-t border-gray-100">
                       <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2">
+                        <div className="grid grid-cols-4 gap-1">
                           <button
                             onClick={async () => {
                               setPrintStatuses(prev => ({ ...prev, [bill.id]: 'sending' }));
@@ -445,14 +445,14 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                               }
                             }}
                             disabled={printStatuses[bill.id] === 'sending'}
-                            className="text-xs font-medium text-blue-700 border border-blue-300 bg-blue-50 px-3 py-2 min-h-[44px] rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors"
+                            className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-blue-700 border-blue-300 bg-blue-50 hover:bg-blue-100 active:bg-blue-200"
                           >
-                            {printStatuses[bill.id] === 'queued' ? '✅ Bhej Diya' : printStatuses[bill.id] === 'failed' ? '❌ Retry' : '🖨 Print Bill'}
+                            {printStatuses[bill.id] === 'queued' ? 'Bhej Diya ✓' : printStatuses[bill.id] === 'failed' ? 'Retry' : 'Print Bill'}
                           </button>
                         {!isReturn && (
                           <button
                             onClick={() => startReturn(bill)}
-                            className="text-xs font-medium text-orange-700 border border-orange-300 bg-orange-50 px-3 py-2 min-h-[44px] rounded-lg hover:bg-orange-100 active:bg-orange-200 transition-colors"
+                            className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-orange-700 border-orange-300 bg-orange-50 hover:bg-orange-100 active:bg-orange-200"
                           >
                             Return
                           </button>
@@ -460,9 +460,17 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         {!isReturn && (user.role === 'admin' || canSalesmanVoid) && (
                           <button
                             onClick={() => startBillBadlo(bill)}
-                            className="text-xs font-medium text-gray-700 border border-gray-300 bg-white px-3 py-2 min-h-[44px] rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                            className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-gray-700 border-gray-300 bg-white hover:bg-gray-50 active:bg-gray-100"
                           >
-                            ✎ Bill badlo
+                            Edit Bill
+                          </button>
+                        )}
+                        {(user.role === 'admin' || canSalesmanVoid) && (
+                          <button
+                            onClick={() => handleDelete(bill)}
+                            className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-red-600 border-red-200 bg-white hover:bg-red-50 active:bg-red-100"
+                          >
+                            Cancel Bill
                           </button>
                         )}
                         </div>
@@ -474,16 +482,6 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         </button>
                       </div>
                     </div>
-                    {(user.role === 'admin' || canSalesmanVoid) && (
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <button
-                          onClick={() => handleDelete(bill)}
-                          className="w-full text-sm font-medium text-red-600 border border-red-200 bg-white px-3 py-2 min-h-[44px] rounded-lg hover:bg-red-50 transition-colors"
-                        >
-                          Cancel Bill
-                        </button>
-                      </div>
-                    )}
                   </div>
                   );
                 })()}
