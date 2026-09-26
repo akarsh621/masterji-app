@@ -1,5 +1,7 @@
 # Master Ji Fashion House -- Billing & Analytics App
 
+> New to this codebase (human or AI agent)? Read [`.ai/PROJECT_OVERVIEW.md`](./.ai/PROJECT_OVERVIEW.md) and [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) first.
+
 Internal billing and sales analytics application for **Master Ji Fashion House**, a clothing retail showroom in **Shastri Nagar, Ghaziabad, Uttar Pradesh, India**.
 
 ## Purpose
@@ -369,8 +371,9 @@ The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-s
 
 ## Related Documents
 
+- [`.ai/PROJECT_OVERVIEW.md`](./.ai/PROJECT_OVERVIEW.md) -- **Start here.** The whole app: purpose, screens and flows, architecture, data model, receipt format, roadmap
+- [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) -- **Developer guidelines**: guiding principle, language, UX, money rules, security, testing, git workflow
 - [`CHANGELIST.md`](./CHANGELIST.md) -- Changelog with test instructions for QA
-- [`DEFERRED_FEATURES.md`](./DEFERRED_FEATURES.md) -- Features analyzed but postponed
-- [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) -- Development rulebook (UX philosophy, data integrity, conventions)
-- [`docs/prd-expense-tracking-pnl.md`](../docs/prd-expense-tracking-pnl.md) -- PRD for expense tracking feature
-- [`docs/clearance-sale-strategy-guide.md`](../docs/clearance-sale-strategy-guide.md) -- Hinglish guide for clearance sales
+- [`DEFERRED_FEATURES.md`](./DEFERRED_FEATURES.md) -- Features analysed but postponed
+- [`QA_TEST_REPORT.md`](./QA_TEST_REPORT.md) -- Historical QA pass (April 2026)
+- [`print-agent/README.txt`](./print-agent/README.txt) -- Shop PC print agent setup

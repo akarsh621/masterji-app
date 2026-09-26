@@ -1,5 +1,7 @@
 # Master Ji Fashion House - QA Test Report
 
+> Historical: this QA pass predates Project 1 (Sept 2026). Many findings are fixed; see CHANGELIST.md section 23 and .ai/PROJECT_OVERVIEW.md for current behaviour.
+
 Last updated: 2026-04-08  
 Mode: End-to-end + finance-integrity-first QA  
 Status: Completed
