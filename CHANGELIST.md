@@ -590,6 +590,17 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 26. GST quarter lock
+
+### What changed
+- A quarter is locked from the 11th of the month after it ends (e.g. Apr–Jun locks on 11 July). After that its bills can't be cancelled or edited (server refuses; Bill Book hides the buttons and says "quarter GST ke liye band hai — sirf Return") and backdating can't reach it. Returns still work and count in the current quarter.
+
+### How to test
+1. `npm test` (tests/quarter-lock.test.mjs)
+2. After 11 Oct 2026, a September bill in Bill Book shows only Print and Return
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

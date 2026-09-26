@@ -51,3 +51,41 @@ export function monthRange(m) {
   const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
   return { from: `${m}-01`, to: `${m}-${String(lastDay).padStart(2, '0')}` };
 }
+
+// ---- GST quarter lock -------------------------------------------------------
+// Quarters: Apr–Jun, Jul–Sep, Oct–Dec, Jan–Mar (financial year). A quarter is
+// locked from the 11th of the month after it ends -- the owner has until the
+// 10th to fix mistakes before filing CMP-08 (due the 18th). After that, bills
+// dated in it can't be cancelled or edited, and nothing can be backdated into
+// it, so figures already filed never change. Returns still work: a return is
+// dated the day it happens, so it counts in the current quarter.
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const pad2 = n => String(n).padStart(2, '0');
+
+function quarterBounds(ymd) {
+  const [y, m] = ymd.split('-').map(Number);
+  const startMonth = Math.floor((m - 1) / 3) * 3 + 1;
+  return { year: y, startMonth, endMonth: startMonth + 2 };
+}
+
+// First date on which the quarter containing `ymd` is locked (YYYY-MM-11).
+export function quarterLockDate(ymd) {
+  const { year, endMonth } = quarterBounds(ymd);
+  const lockMonth = endMonth === 12 ? 1 : endMonth + 1;
+  const lockYear = endMonth === 12 ? year + 1 : year;
+  return `${lockYear}-${pad2(lockMonth)}-11`;
+}
+
+export function isQuarterLocked(ymd, today = todayIST()) {
+  return today >= quarterLockDate(ymd);
+}
+
+// "Apr–Jun 2026"
+export function quarterLabel(ymd) {
+  const { year, startMonth, endMonth } = quarterBounds(ymd);
+  return `${SHORT_MONTHS[startMonth - 1]}–${SHORT_MONTHS[endMonth - 1]} ${year}`;
+}
+
+export function quarterLockedMessage(ymd) {
+  return `Ye bill ${quarterLabel(ymd)} quarter ka hai — GST filing ke liye band ho chuka hai. Badalna ho toh Return karo.`;
+}

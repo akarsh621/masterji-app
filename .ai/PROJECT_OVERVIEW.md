@@ -73,7 +73,7 @@ A saved bill is never edited in place.
 
 - **Edit Bill** opens the bill pre-filled in Naya Bill ("Bill MJF-0104 edit kar rahe ho", with **Cancel editing**). On save, one server transaction cancels the old bill and creates the new one (`replaces_bill_id`), keeping the original date and salesman. The drawer moves only by the cash difference. Shown as "MJF-0104 ki jagah" / linked both ways.
 - **Cancel Bill** soft-deletes the bill (`deleted_at`) and reverses its cash (unless backdated). Blocked if the bill has an active return ("Pehle iska return bill cancel karo").
-- Permissions for both: salesman only their own bill within 15 minutes; admin any bill.
+- Permissions for both: salesman only their own bill within 15 minutes; admin any bill **except bills in a GST quarter that's already closed** (locked from the 11th of the month after the quarter ends; those can only be returned). Backdating can't reach a closed quarter either.
 
 ### 3.4 Cash drawer (Hisaab)
 

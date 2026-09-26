@@ -8,6 +8,7 @@ import BillPreview from '@/components/BillPreview';
 import LoadError from '@/components/LoadError';
 import { normalizeSavedBill } from '@/lib/bill-data';
 import { getISTDateInputValue } from '@/lib/ui-utils';
+import { isQuarterLocked, quarterLabel } from '@/lib/date-utils';
 
 function formatBillTime(value) {
   if (!value || typeof value !== 'string') return '--';
@@ -367,6 +368,8 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                 lastDate = billDate;
               }
               const isReturn = bill.type === 'return';
+              // Quarter already closed for GST filing: no cancel or edit, only Return.
+              const quarterLocked = isQuarterLocked(bill.created_at.slice(0, 10));
               const isBackdated = typeof bill.notes === 'string' && bill.notes.includes('[Backdated]');
               const minutesOld = getMinutesSinceCreation(bill.created_at);
               const canSalesmanVoid = user.role === 'salesman' && bill.salesman_id === user.id && minutesOld <= 15;
@@ -457,7 +460,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                             Return
                           </button>
                         )}
-                        {!isReturn && (user.role === 'admin' || canSalesmanVoid) && (
+                        {!isReturn && !quarterLocked && (user.role === 'admin' || canSalesmanVoid) && (
                           <button
                             onClick={() => startBillBadlo(bill)}
                             className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-gray-700 border-gray-300 bg-white hover:bg-gray-50 active:bg-gray-100"
@@ -465,7 +468,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                             Edit Bill
                           </button>
                         )}
-                        {(user.role === 'admin' || canSalesmanVoid) && (
+                        {!quarterLocked && (user.role === 'admin' || canSalesmanVoid) && (
                           <button
                             onClick={() => handleDelete(bill)}
                             className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-red-600 border-red-200 bg-white hover:bg-red-50 active:bg-red-100"
@@ -474,6 +477,11 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                           </button>
                         )}
                         </div>
+                        {quarterLocked && user.role === 'admin' && (
+                          <p className="text-xs text-gray-500">
+                            {quarterLabel(bill.created_at.slice(0, 10))} quarter GST ke liye band hai — cancel/edit nahi, sirf Return.
+                          </p>
+                        )}
                         <button
                           onClick={() => printReceipt(bill)}
                           className="text-[10px] text-gray-400 underline"

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, getISTNow, updateCashDrawer } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
+import { isQuarterLocked, quarterLockedMessage } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,11 @@ export async function DELETE(request, { params }) {
     `).get(id);
     if (!bill) {
       return NextResponse.json({ error: 'Bill nahi mila' }, { status: 404 });
+    }
+
+    // Bills in a quarter already closed for GST filing never change.
+    if (isQuarterLocked(bill.created_at.slice(0, 10))) {
+      return NextResponse.json({ error: quarterLockedMessage(bill.created_at.slice(0, 10)) }, { status: 403 });
     }
 
     if (result.user.role === 'salesman') {

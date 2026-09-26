@@ -6,7 +6,7 @@ import { api, newRequestId } from '@/lib/api-client';
 import { loadDraft, saveDraft, clearDraft } from '@/lib/bill-draft';
 import LoadError from '@/components/LoadError';
 import { normalizePhone, isValidPhone } from '@/lib/phone';
-import { todayIST } from '@/lib/date-utils';
+import { todayIST, isQuarterLocked } from '@/lib/date-utils';
 import { MAX_MRP } from '@/lib/limits';
 import { printReceipt } from '@/lib/print-receipt';
 import BillPreview from '@/components/BillPreview';
@@ -39,6 +39,14 @@ const PAYMENT_MODES = [
 ];
 
 const BACKDATE_MAX_DAYS = 30;
+
+// Earliest date a bill can be backdated to: 30 days back, but never into a
+// quarter already closed for GST filing.
+function earliestBackdate() {
+  let d = ymdOffsetDays(todayIST(), -BACKDATE_MAX_DAYS);
+  while (isQuarterLocked(d)) d = ymdOffsetDays(d, 1);
+  return d;
+}
 
 function ymdOffsetDays(baseYmd, deltaDays) {
   const base = new Date(baseYmd + 'T00:00:00Z');
@@ -944,7 +952,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
                 <input
                   type="date"
                   value={backdateValue || todayIST()}
-                  min={ymdOffsetDays(todayIST(), -BACKDATE_MAX_DAYS)}
+                  min={earliestBackdate()}
                   max={todayIST()}
                   onChange={(e) => setBackdateValue(e.target.value)}
                   className="input text-sm"

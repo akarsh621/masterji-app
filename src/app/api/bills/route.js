@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, generateBillNumber, updateCashDrawer, getISTNow } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-import { isValidDate, todayIST, daysBetweenYMD } from '@/lib/date-utils';
+import { isValidDate, todayIST, daysBetweenYMD, isQuarterLocked, quarterLabel, quarterLockedMessage } from '@/lib/date-utils';
 import { normalizePhone, isValidPhone } from '@/lib/phone';
 import { MAX_MRP, MAX_QTY_PER_LINE } from '@/lib/limits';
 
@@ -75,6 +75,9 @@ export async function POST(request) {
       const daysOld = daysBetweenYMD(billDateInput, today);
       if (daysOld > BACKDATE_MAX_DAYS) {
         return NextResponse.json({ error: `Backdate ${BACKDATE_MAX_DAYS} din se purana nahi ho sakta` }, { status: 400 });
+      }
+      if (isQuarterLocked(billDateInput, today)) {
+        return NextResponse.json({ error: `${quarterLabel(billDateInput)} quarter GST filing ke liye band ho chuka hai — us date ka bill nahi ban sakta` }, { status: 400 });
       }
       if (billDateInput !== today) {
         isBackdated = true;
@@ -303,6 +306,9 @@ export async function POST(request) {
       }
       if (replacing.type !== 'sale') {
         return NextResponse.json({ error: 'Return bill edit nahi ho sakta' }, { status: 400 });
+      }
+      if (isQuarterLocked(replacing.created_at.slice(0, 10))) {
+        return NextResponse.json({ error: quarterLockedMessage(replacing.created_at.slice(0, 10)) }, { status: 403 });
       }
       if (result.user.role !== 'admin') {
         const createdAt = new Date(replacing.created_at.replace(' ', 'T') + '+05:30');
