@@ -296,6 +296,7 @@ npm run build && npm start    # production build locally
 | File | What it is |
 |---|---|
 | `.ai/APP_RULES.md` | **Developer guidelines -- the rules to follow when changing anything** |
+| `.ai/DECISIONS.md` | **Decision log -- every owner decision and why (tax, money, access, UI, ops)** |
 | `README.md` | Setup, feature list, API table, design decisions |
 | `CHANGELIST.md` | Change history with manual test steps |
 | `DEFERRED_FEATURES.md` | Analysed ideas deliberately not built |

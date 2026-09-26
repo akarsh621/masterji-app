@@ -1,6 +1,6 @@
 # Master Ji Fashion House -- Billing & Analytics App
 
-> New to this codebase (human or AI agent)? Read [`.ai/PROJECT_OVERVIEW.md`](./.ai/PROJECT_OVERVIEW.md) and [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) first.
+> New to this codebase (human or AI agent)? Read [`.ai/PROJECT_OVERVIEW.md`](./.ai/PROJECT_OVERVIEW.md), [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) and [`.ai/DECISIONS.md`](./.ai/DECISIONS.md) first.
 
 Internal billing and sales analytics application for **Master Ji Fashion House**, a clothing retail showroom in **Shastri Nagar, Ghaziabad, Uttar Pradesh, India**.
 
@@ -373,6 +373,7 @@ The app UI is in **Hinglish** (Hindi in Roman script) -- designed for non-tech-s
 
 - [`.ai/PROJECT_OVERVIEW.md`](./.ai/PROJECT_OVERVIEW.md) -- **Start here.** The whole app: purpose, screens and flows, architecture, data model, receipt format, roadmap
 - [`.ai/APP_RULES.md`](./.ai/APP_RULES.md) -- **Developer guidelines**: guiding principle, language, UX, money rules, security, testing, git workflow
+- [`.ai/DECISIONS.md`](./.ai/DECISIONS.md) -- **Decision log**: every owner decision and why (GST quarter lock, returns, receipt, access, UI)
 - [`CHANGELIST.md`](./CHANGELIST.md) -- Changelog with test instructions for QA
 - [`DEFERRED_FEATURES.md`](./DEFERRED_FEATURES.md) -- Features analysed but postponed
 - [`QA_TEST_REPORT.md`](./QA_TEST_REPORT.md) -- Historical QA pass (April 2026)

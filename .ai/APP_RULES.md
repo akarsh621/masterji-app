@@ -151,6 +151,7 @@ A wrong number destroys trust in the app. Every rule here has a regression test;
 ## 9. Keeping docs current
 
 When behaviour changes, update in the same commit:
+- `.ai/DECISIONS.md` -- **every decision the owner takes** (what, why, date). Tax/compliance decisions especially: they are the reason code looks the way it does.
 - `.ai/PROJECT_OVERVIEW.md` -- what the app does and how it's built
 - `.ai/APP_RULES.md` -- a new rule or decision
 - `CHANGELIST.md` -- what changed and how to test it
