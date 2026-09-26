@@ -574,6 +574,22 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 25. Money integrity audit
+
+### What changed
+- **CSV export**: return rows are now negative (Total, Subtotal, MRP, Discount, pieces, payment split) and a new "Against Bill" column names the original bill, so summing the Total column gives the true net turnover. Before, returns were positive and a plain sum overstated turnover.
+- **Hisaab**: an earlier day's bill that was edited and then cancelled on the same day was shown as taking its cash out twice in the "cancel / edit" line (the drawer itself was always right).
+- **Cancel Bill**: the "has an active return" check now runs inside the same database step as the cancel.
+- **`npm run audit -- <db-file>`** (scripts/money-audit.mjs): read-only check of every bill (totals, payments, discounts, returns vs what was sold and paid, edits) plus turnover by month and GST quarter.
+- **tests/integrity.test.mjs**: random stress test of ~250 operations checked against an independent model and every report.
+
+### How to test
+1. `npm test` -- all green
+2. `npm run audit -- data/masterji_dev.db` -- "OK: every bill passes"
+3. Export CSV for a month with a return; sum the Total column in a spreadsheet = Dashboard Net Revenue for that month
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

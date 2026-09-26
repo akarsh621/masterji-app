@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "seed:dev": "node src/lib/db/seed.js --dev",
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "audit": "node scripts/money-audit.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -86,7 +86,10 @@ export async function GET(request) {
       AND date(b.created_at) < ${today} AND b.is_backdated = 0`;
     const cancelledSalesCash = cashOf(`b.type = 'sale' AND ${earlierCancelled}`);
     const cancelledReturnsCash = cashOf(`b.type = 'return' AND ${earlierCancelled}`);
-    const correctionsCash = cashOf(`b.deleted_at IS NULL AND b.replaces_bill_id IN
+    // A replacement's cash came in when it was saved (today), even if that
+    // replacement was itself cancelled or edited again later -- that later change
+    // is counted on its own as a cancelled bill.
+    const correctionsCash = cashOf(`b.replaces_bill_id IN
       (SELECT id FROM bills b WHERE ${earlierCancelled})`);
     const cashAdjustment = Math.round((correctionsCash + cancelledReturnsCash - cancelledSalesCash) * 100) / 100;
 

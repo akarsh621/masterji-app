@@ -267,7 +267,8 @@ Railway builds with `npm run build`, starts with `npm start`, health check `/api
 ```bash
 npm install          # Node 22
 npm run dev          # dev server on dev DB (add -- -H 0.0.0.0 to reach it from phones on the same Wi-Fi)
-npm test             # integration tests on a throwaway DB
+npm test             # integration tests on a throwaway DB (incl. the money integrity stress test)
+npm run audit -- <db-file>    # money audit of a DB copy + turnover by month and GST quarter
 npm run seed:dev -- --force   # reset the local dev DB
 npm run build && npm start    # production build locally
 ```

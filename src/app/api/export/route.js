@@ -67,10 +67,12 @@ export async function GET(request) {
         b.payment_mode,
         b.notes,
         b.customer_name,
-        cu.phone AS customer_phone
+        cu.phone AS customer_phone,
+        ob.bill_number AS original_bill_number
       FROM bills b
       JOIN users u ON b.salesman_id = u.id
       LEFT JOIN customers cu ON cu.id = b.customer_id
+      LEFT JOIN bills ob ON ob.id = b.original_bill_id
       WHERE ${whereClause}
       ORDER BY b.created_at DESC, b.id
     `).all(...params);
@@ -113,7 +115,7 @@ export async function GET(request) {
       'Bill No', 'Type', 'Date', 'Time', 'Salesman',
       'Qty', 'MRP Total', 'Subtotal', 'Discount %', 'Discount Amt',
       'Total', 'Payment Mode', 'Payment Split', 'Items Detail', 'Notes',
-      'Customer Phone', 'Customer Name'
+      'Customer Phone', 'Customer Name', 'Against Bill'
     ];
 
     let csv = headers.join(',') + '\n';
@@ -122,14 +124,18 @@ export async function GET(request) {
       const items = itemsByBill[bill.id] || [];
       const payments = paymentsByBill[bill.id] || [];
 
-      const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+      // Return rows are negative (money and pieces), so summing any column in a
+      // spreadsheet gives the true net figure for the period.
+      const sign = bill.type === 'return' ? -1 : 1;
+      const money = (v) => sign * (Math.round((v || 0) * 100) / 100);
+      const totalQty = sign * items.reduce((s, i) => s + i.quantity, 0);
 
       const itemDetail = items.map(i =>
         `${i.category} x${i.quantity}`
       ).join(', ');
 
       const paymentSplit = payments.map(p =>
-        `${p.mode}:${Math.round(p.amount * 100) / 100}`
+        `${p.mode}:${money(p.amount)}`
       ).join(', ');
 
       const dateStr = bill.created_at ? bill.created_at.split(' ')[0] : '';
@@ -142,17 +148,18 @@ export async function GET(request) {
         timeStr,
         bill.salesman,
         totalQty,
-        Math.round((bill.mrp_total || 0) * 100) / 100,
-        Math.round((bill.subtotal) * 100) / 100,
+        money(bill.mrp_total),
+        money(bill.subtotal),
         bill.discount_percent || 0,
-        Math.round((bill.discount_amount || 0) * 100) / 100,
-        Math.round((bill.total) * 100) / 100,
+        money(bill.discount_amount),
+        money(bill.total),
         bill.payment_mode,
         paymentSplit,
         itemDetail,
         bill.notes || '',
         bill.customer_phone || '',
         bill.customer_name || '',
+        bill.original_bill_number || '',
       ].map(csvEscape).join(',');
 
       csv += line + '\n';

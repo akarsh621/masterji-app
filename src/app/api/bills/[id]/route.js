@@ -45,6 +45,16 @@ export async function DELETE(request, { params }) {
     const payments = db.prepare('SELECT * FROM bill_payments WHERE bill_id = ?').all(id);
 
     const voidBill = db.transaction(() => {
+      // A sale with an active return can't be cancelled (the refund would stay
+      // counted). Checked inside the transaction so a return saved at the same
+      // moment can't slip past.
+      if (bill.type === 'sale') {
+        const activeReturn = db.prepare(
+          "SELECT bill_number FROM bills WHERE original_bill_id = ? AND type = 'return' AND deleted_at IS NULL"
+        ).get(id);
+        if (activeReturn) return { blockedBy: activeReturn.bill_number };
+      }
+
       // Re-checked inside the transaction so two voids can't both reverse cash.
       const changed = db.prepare('UPDATE bills SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').run(getISTNow(), id);
       if (changed.changes === 0) return false;
@@ -65,19 +75,14 @@ export async function DELETE(request, { params }) {
       return true;
     });
 
-    if (bill.type === 'sale') {
-      const activeReturn = db.prepare(
-        "SELECT bill_number FROM bills WHERE original_bill_id = ? AND type = 'return' AND deleted_at IS NULL"
-      ).get(id);
-      if (activeReturn) {
-        return NextResponse.json(
-          { error: `Is bill ka return (${activeReturn.bill_number}) hua hai — pehle woh return cancel karo` },
-          { status: 409 }
-        );
-      }
+    const outcome = voidBill();
+    if (outcome && outcome.blockedBy) {
+      return NextResponse.json(
+        { error: `Is bill ka return (${outcome.blockedBy}) hua hai — pehle woh return cancel karo` },
+        { status: 409 }
+      );
     }
-
-    if (!voidBill()) {
+    if (!outcome) {
       return NextResponse.json({ error: 'Bill pehle hi cancel ho chuka hai' }, { status: 404 });
     }
 

@@ -125,6 +125,9 @@ A wrong number destroys trust in the app. Every rule here has a regression test;
 ### Testing
 - **`npm test` must pass before every commit.** It starts `next dev` on a throwaway DB and runs `tests/*.test.mjs`.
 - **Every money bug gets a regression test that fails before the fix.**
+- **`tests/integrity.test.mjs` is the money safety net**: a seeded random mix of sales, returns, cancels, edits, backdated bills and cash-outs, checked against an independent model, the money audit, the drawer and every report. Any change to billing, returns, cancelling, the drawer or a report must keep it green (try several seeds: `SEED=11 OPS=400 node tests/run.mjs integrity`).
+- **Every report must agree**: Dashboard, Earnings, Hisaab, customers and the CSV export (whose Total column must sum to net turnover, with returns negative).
+- **Run `npm run audit <db-file>` on a copy of the production database** before every deploy and before every quarterly GST filing.
 - **Verify UI changes in a real browser at phone width (≈420 px)** as the relevant role(s): keyboard behaviour, scroll, tap targets, the actual flow end to end. Also run `NEXT_DIST_DIR=.next-prodcheck npx next build` to confirm a clean production build.
 - For phone testing on the same Wi-Fi: `npm run dev -- -H 0.0.0.0`, then open `http://<ipconfig getifaddr en0>:3000`.
 - Work in dev mode (`npm run dev`, `data/masterji_dev.db`). Never point tests or experiments at production.
