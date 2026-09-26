@@ -21,7 +21,8 @@ The shop is registered under the **GST composition scheme**. The app's figures a
 | **GSTIN is a placeholder** (`SHOP_GSTIN = ''` in `print-agent/agent.py` and `src/lib/print-receipt.js`) until the owner provides it. | Owner to supply. | 26 Sep 2026 |
 | **Bill numbers stay `MJF-XXXX`** (one running series). No financial-year series like `MJF/26-27/0231`. | Already legally fine (unique, under 16 characters); changing it would touch the whole app. | 26 Sep 2026 |
 | **No separate Round Off line.** Discount on the receipt = everything off MRP (item discounts, final price, cash round-off). | The app stores round-off inside the discount; no schema change for a cosmetic line. | 26 Sep 2026 |
-| No composition-limit tracker (₹1.5 crore). | Owner reads turnover off the reports. | Sep 2026 |
+| No composition-limit tracker (₹1.5 crore) and no financial-year total. | Owner reads turnover off the reports; reconfirmed. | Sep 2026, reconfirmed 27 Sep 2026 |
+| **Quarter turnover lives in Dashboard → Custom** as one **Quarter (GST)** dropdown, grouped by financial year, listing quarters from the first bill to the running one ("chalu", up to today). Picking one fills the dates; a line shows "Turnover = Net Revenue", the lock date and CMP-08 due date, or "Band ✓". A whole quarter compares with the whole previous quarter. Export gives the CA that quarter's bills. Quarters only (no full-year option for now); not added to Earnings, which stays monthly. | One place for the filing figure and the CA's file; no clutter (one dropdown, not four buttons); the list builds itself across years. | 27 Sep 2026 |
 
 ## 2. Money rules
 

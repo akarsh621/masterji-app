@@ -89,3 +89,61 @@ export function quarterLabel(ymd) {
 export function quarterLockedMessage(ymd) {
   return `Ye bill ${quarterLabel(ymd)} quarter ka hai — GST filing ke liye band ho chuka hai. Badalna ho toh Return karo.`;
 }
+
+// ---- Quarters for reports ----------------------------------------------------
+function addDaysYmd(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// The GST quarter containing `ymd`, e.g. 2026-09-27 ->
+// { from: '2026-07-01', to: '2026-09-30', q: 2, fyLabel: 'FY 2026-27', label: 'Jul–Sep 2026' }.
+// Quarters follow the financial year: Apr–Jun is Q1, Jan–Mar is Q4 of the previous FY.
+export function quarterOf(ymd) {
+  const { year, startMonth, endMonth } = quarterBounds(ymd);
+  const lastDay = new Date(Date.UTC(year, endMonth, 0)).getUTCDate();
+  const fyStart = startMonth >= 4 ? year : year - 1;
+  return {
+    from: `${year}-${pad2(startMonth)}-01`,
+    to: `${year}-${pad2(endMonth)}-${pad2(lastDay)}`,
+    q: startMonth >= 4 ? (startMonth - 4) / 3 + 1 : 4,
+    fyLabel: `FY ${fyStart}-${String(fyStart + 1).slice(2)}`,
+    label: quarterLabel(ymd),
+  };
+}
+
+// CMP-08 due date for the quarter containing `ymd` (18th of the month after it ends).
+export function cmp08DueDate(ymd) {
+  return quarterLockDate(ymd).slice(0, 8) + '18';
+}
+
+// Every quarter from the one containing `firstYmd` up to the current one, newest
+// first. The running quarter is marked `current` and ends today.
+export function listQuarters(firstYmd, today = todayIST()) {
+  const stop = quarterOf(firstYmd && firstYmd < today ? firstYmd : today).from;
+  const out = [];
+  let q = quarterOf(today);
+  for (;;) {
+    const current = q.from <= today && today <= q.to;
+    out.push({ ...q, current, to: current ? today : q.to });
+    if (q.from <= stop) break;
+    q = quarterOf(addDaysYmd(q.from, -1));
+  }
+  return out;
+}
+
+// The quarter a from/to range covers exactly (a whole quarter, or the running
+// quarter up to today), or null.
+export function matchQuarter(from, to, today = todayIST()) {
+  if (!from || !to) return null;
+  const q = quarterOf(from);
+  if (from !== q.from) return null;
+  if (to === q.to) return { ...q, current: false };
+  if (to === today && q.from <= today && today <= q.to) return { ...q, current: true, to: today };
+  return null;
+}
+
+export function previousQuarter(ymd) {
+  return quarterOf(addDaysYmd(quarterOf(ymd).from, -1));
+}

@@ -6,7 +6,13 @@ import { getISTDateInputValue, formatRupees } from '@/lib/ui-utils';
 import DeltaBadge from '@/components/DeltaBadge';
 import CategoryBreakdown from '@/components/CategoryBreakdown';
 import LoadError from '@/components/LoadError';
-import { currentISTMonth, prevMonth, nextMonth, monthLabel, monthRange } from '@/lib/date-utils';
+import {
+  currentISTMonth, prevMonth, nextMonth, monthLabel, monthRange,
+  listQuarters, matchQuarter, quarterLockDate, cmp08DueDate, isQuarterLocked, todayIST,
+} from '@/lib/date-utils';
+
+// '2026-10-11' -> '11 Oct'
+const shortDay = (ymd) => new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 export default function Dashboard() {
   const [view, setView] = useState('today');
@@ -14,6 +20,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  // Custom: a GST quarter picked from the list (its start date), or '' for typed dates.
+  const [selectedQuarter, setSelectedQuarter] = useState('');
   const [trendMode, setTrendMode] = useState('weekly');
   // Mahina view: which month is shown (defaults to, and can't go past, this month).
   const thisMonth = currentISTMonth();
@@ -22,6 +30,8 @@ export default function Dashboard() {
 
   const [loadError, setLoadError] = useState('');
   const fetchSeq = useRef(0);
+  // Quarters with bills, newest first (grouped by financial year in the list).
+  const quarterList = listQuarters(data?.first_bill_date);
 
   const fetchData = (v, from, to) => {
     // Only the latest request may update the screen (fast Aaj/Hafta/Mahina taps).
@@ -54,7 +64,19 @@ export default function Dashboard() {
       const today = getISTDateInputValue();
       setCustomFrom(today);
       setCustomTo(today);
+      setSelectedQuarter('');
     }
+  };
+
+  // Picking a quarter fills the dates and loads it straight away.
+  const pickQuarter = (from) => {
+    setSelectedQuarter(from);
+    if (!from) return;
+    const q = quarterList.find(x => x.from === from);
+    if (!q) return;
+    setCustomFrom(q.from);
+    setCustomTo(q.to);
+    fetchData('custom', q.from, q.to);
   };
 
   const applyCustomRange = () => {
@@ -97,7 +119,7 @@ export default function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `masterji-bills-${view === 'month' ? month : view}.csv`;
+      a.download = `masterji-bills-${view === 'month' ? month : view === 'custom' ? `${params.from}-to-${params.to}` : view}.csv`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
@@ -114,6 +136,9 @@ export default function Dashboard() {
   if (!data) return loadError ? <LoadError message={loadError} onRetry={() => fetchData(view, customFrom, customTo)} /> : null;
 
   const { summary, previous_summary, categoryBreakdown, dailyTrend, weeklyTrend, salesmanBreakdown } = data;
+  const today = todayIST();
+  // GST quarter shown right now (only when the loaded range is exactly a quarter).
+  const shownQuarter = view === 'custom' ? matchQuarter(data.period?.current?.from, data.period?.current?.to, today) : null;
   const prev = previous_summary || {};
 
   return (
@@ -164,17 +189,48 @@ export default function Dashboard() {
 
       {view === 'custom' && (
         <div className="card mb-4">
+          <label className="block text-xs text-gray-500 mb-1">Quarter (GST)</label>
+          <select
+            value={selectedQuarter}
+            onChange={e => pickQuarter(e.target.value)}
+            className="input text-sm mb-2"
+          >
+            <option value="">Quarter chuno</option>
+            {[...new Set(quarterList.map(q => q.fyLabel))].map(fy => (
+              <optgroup key={fy} label={fy}>
+                {quarterList.filter(q => q.fyLabel === fy).map(q => (
+                  <option key={q.from} value={q.from}>
+                    {q.label} · Q{q.q}{q.current ? ' · chalu' : ''}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
               <label className="block text-xs text-gray-500 mb-1">From</label>
-              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input text-sm" />
+              <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setSelectedQuarter(''); }} className="input text-sm" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">To</label>
-              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input text-sm" />
+              <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setSelectedQuarter(''); }} className="input text-sm" />
             </div>
           </div>
           <button onClick={applyCustomRange} className="btn-primary w-full text-sm">Apply</button>
+          {shownQuarter && (
+            <div className="mt-3 pt-3 border-t border-gray-100 text-sm">
+              <div className="font-semibold text-gray-900">
+                GST Quarter {shownQuarter.label} · Q{shownQuarter.q} {shownQuarter.fyLabel}
+                {shownQuarter.current && <span className="font-normal text-amber-700"> · abhi chal raha (ab tak)</span>}
+              </div>
+              <div className="text-gray-600">
+                Turnover = Net Revenue ·{' '}
+                {isQuarterLocked(shownQuarter.from, today)
+                  ? <>Band ✓ ({shortDay(quarterLockDate(shownQuarter.from))} se)</>
+                  : <>Locks {shortDay(quarterLockDate(shownQuarter.from))} · CMP-08 due {shortDay(cmp08DueDate(shownQuarter.from))}</>}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
-import { isValidDate, todayIST } from '@/lib/date-utils';
+import { isValidDate, todayIST, matchQuarter, previousQuarter } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,9 +33,15 @@ function monthEnd(ym) {
 //   view=week   -> this Monday..today vs the whole previous week
 //   view=month or month=YYYY-MM -> that month (up to today) vs the whole previous month
 //   from/to     -> that range vs the same number of days just before it
+//                  (a whole GST quarter, or the running one, vs the whole previous quarter)
 function resolvePeriods({ view, from, to, month }) {
   const today = todayIST();
   if (from && to) {
+    const quarter = matchQuarter(from, to, today);
+    if (quarter) {
+      const prevQ = previousQuarter(from);
+      return { current: { from, to }, previous: { from: prevQ.from, to: prevQ.to } };
+    }
     const days = Math.round((new Date(to + 'T00:00:00Z') - new Date(from + 'T00:00:00Z')) / 86400000) + 1;
     const prevTo = addDays(from, -1);
     return { current: { from, to }, previous: { from: addDays(prevTo, -(days - 1)), to: prevTo } };
@@ -217,8 +223,12 @@ export async function GET(request) {
       s.items = itemCount.items;
     }
 
+    // Earliest bill date, so the Quarter list starts at the app's first quarter.
+    const firstBill = db.prepare('SELECT MIN(created_at) AS first FROM bills WHERE deleted_at IS NULL').get();
+
     return NextResponse.json({
       period: periods,
+      first_bill_date: firstBill.first ? firstBill.first.slice(0, 10) : null,
       summary,
       previous_summary,
       categoryBreakdown,

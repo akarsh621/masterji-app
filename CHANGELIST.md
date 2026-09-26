@@ -601,6 +601,20 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 27. GST quarter in Dashboard → Custom
+
+### What changed
+- One **Quarter (GST)** dropdown above From/To, grouped by financial year (Jan–Mar is Q4 of the previous FY), listing quarters from the first bill to the running one ("chalu", up to today). Picking one fills the dates and loads it; typing a date clears it.
+- For an exact quarter: "GST Quarter Jul–Sep 2026 · Q2 FY 2026-27", "Turnover = Net Revenue", and "Locks 11 Oct · CMP-08 due 18 Oct" or "Band ✓".
+- A whole quarter compares with the whole previous quarter (was: same number of days before). Custom export files are named with their dates.
+
+### How to test
+1. Dashboard → Custom → Quarter → pick one: dates fill, the line appears, Net Revenue equals `npm run audit`'s figure for that quarter
+2. Change a date by hand → dropdown back to "Quarter chuno", line gone after Apply
+3. Export → the file's Total column sums to Net Revenue
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

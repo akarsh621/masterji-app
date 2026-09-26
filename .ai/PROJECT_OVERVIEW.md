@@ -41,7 +41,7 @@ Bottom tabs differ by role. Admin also has **⚙ Settings** in the header.
 |---|---|---|---|
 | **Naya Bill** | ✓ | ✓ | Make a bill. Tapping it while already on it starts a fresh bill (asks first if items exist) |
 | **Aaj** | ✓ | -- | Today's figures only: sales, bills, payment split, returns, team performance, categories |
-| **Dashboard** | -- | ✓ | Aaj / Hafta / Mahina (month scroller) / Custom analytics with previous-period comparison, trends, CSV export |
+| **Dashboard** | -- | ✓ | Aaj / Hafta / Mahina (month scroller) / Custom analytics with previous-period comparison, trends, CSV export. Custom has a **Quarter (GST)** dropdown (by financial year) for the quarterly turnover, lock and CMP-08 dates |
 | **Earnings** | -- | ✓ | Monthly P&L: revenue vs expenses (stock purchase, salaries, utilities, other), expense entry |
 | **Hisaab** | -- | ✓ | Cash drawer: balance, petty cash target, today's cash in/out lines, daily sweep, manual correction, cash-out |
 | **Bill Book** | ✓ | ✓ | All bills, any date. Search (bill no., mobile, customer name, amount) across all dates, collapsible filters. Print, Return, Edit Bill, Cancel Bill |
