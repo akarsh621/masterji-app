@@ -99,6 +99,9 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
   const [showNotes, setShowNotes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
+  // In-app confirmation ('new' | 'cancel'). Phone browsers can silently skip
+  // window.confirm, so starting over never relies on it.
+  const [confirmReset, setConfirmReset] = useState(null);
   const [printStatus, setPrintStatus] = useState(null);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
@@ -292,10 +295,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
     itemsChanged();
   };
 
-  const cancelBill = () => {
-    if (!window.confirm('Ye bill cancel karein? Saare items hat jayenge.')) return;
-    resetBill();
-  };
+  const cancelBill = () => setConfirmReset('cancel');
 
   // Tapping "Naya Bill" in the bottom bar while already here starts a fresh bill.
   const lastNewBillRequest = useRef(newBillRequest);
@@ -307,8 +307,8 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
       setPrintStatus(null);
       return;
     }
-    if (items.length > 0 && !window.confirm('Naya bill shuru karein? Abhi wala bill hat jayega.')) return;
-    resetBill();
+    if (items.length > 0) setConfirmReset('new');
+    else resetBill();
   }, [newBillRequest]);
 
   // The tapped number is the line total, so the edit is the new line total.
@@ -548,10 +548,35 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
   const availableSplitModes = PAYMENT_MODES.filter(m => m.id !== primaryMode);
   const canAdd = parsedMrp > 0 && computedSellingPrice > 0 && selectedCategoryId;
 
+  const confirmBox = confirmReset && (
+    <div className="fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-xl">
+        <p className="text-base font-semibold text-gray-900 mb-1">
+          {confirmReset === 'new' ? 'Naya bill shuru karein?' : 'Ye bill cancel karein?'}
+        </p>
+        <p className="text-sm text-gray-600 mb-4">
+          Abhi wale bill ke {totalPieces} {totalPieces === 1 ? 'item' : 'items'} (₹{sellingTotal.toLocaleString('en-IN')}) hat jayenge.
+        </p>
+        <div className="flex gap-2">
+          <button onClick={() => setConfirmReset(null)} className="btn-secondary flex-1 py-3">
+            Nahi
+          </button>
+          <button
+            onClick={() => { setConfirmReset(null); resetBill(); }}
+            className="flex-1 py-3 rounded-lg bg-red-600 text-white font-medium"
+          >
+            {confirmReset === 'new' ? 'Haan, naya bill' : 'Haan, cancel karo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ==================== SCREEN 1: ITEM BUILDING ====================
   if (screen === 'items') {
     return (
       <div>
+        {confirmBox}
         <h2 className="text-lg font-bold mb-3">Naya Bill</h2>
 
         {replacesBill && (
@@ -822,6 +847,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
   // ==================== SCREEN 2: PAYMENT ====================
   return (
     <div>
+      {confirmBox}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-bold">Payment</h2>
         <button
