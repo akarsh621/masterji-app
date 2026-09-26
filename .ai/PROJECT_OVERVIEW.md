@@ -95,9 +95,13 @@ Optional on every bill. A **phone number = a household** (family members share o
 
 ## 4. Receipt format
 
-Printed by the shop PC agent on an 80 mm thermal printer (TVS RP 3200 Star, ESC/POS, 42 characters per line). The browser fallback (`src/lib/print-receipt.js`) prints the same layout as HTML. Sample:
+Printed by the shop PC agent on an 80 mm thermal printer (TVS RP 3200 Star, ESC/POS, 42 characters per line). The browser fallback (`src/lib/print-receipt.js`) prints the same layout as HTML. **Keep the two identical.** Sample sale:
 
 ```
+==========================================
+             BILL OF SUPPLY
+   Composition taxable person, not
+   eligible to collect tax on supplies
 ==========================================
                 MASTER JI                        (double size)
               FASHION HOUSE                      (double size)
@@ -106,43 +110,48 @@ Printed by the shop PC agent on an 80 mm thermal printer (TVS RP 3200 Star, ESC/
       Ph: 9540664066 / 0120-4245977
       GSTIN: <SHOP_GSTIN>                        (once set)
 ==========================================
-BILL OF SUPPLY
-Composition taxable person, not
-eligible to collect tax on supplies
-MJF-0231              26 Sep 2026  5:42 PM
+Bill: MJF-0231        26 Sep 2026  5:42 PM
 Salesman: Salesman 1
 Customer: Pooja                                  (only if entered)
 ------------------------------------------
 Item                       Qty          Rs
 ------------------------------------------
-Kurti                        2       1,998
-Palazzo/Pant                 1         720
+Kurti                        2       2,598
+Palazzo/Pant                 1         899
 ------------------------------------------
-Discount on MRP                     Rs 787       (only if any)
+MRP Total                         Rs 3,497
+Discount                           -Rs 787       (only if any)
 ==========================================
 TOTAL        Rs 2,710                            (double size)
 ==========================================
-CASH                              Rs 1,500       (one line per payment)
+CASH                              Rs 1,500       (one line per payment, always)
 UPI                               Rs 1,210
 
 Note: Alteration Monday                          (only if any)
 ------------------------------------------
-Exchange / Return sirf 7 din mein
+    Exchange / Return sirf 7 din mein
 ------------------------------------------
-Thank You For Shopping!
 
-Naye kapdo me jach rahe ho,
-phir zarur aana :)
+                 For MASTER JI FASHION HOUSE
+                        Authorised Signatory
+------------------------------------------
+     Thank you for shopping with us!
+   We look forward to seeing you again.
 
             [QR: Google review link]
-Accha laga to upar QR scan karein
-Ek review zarur dein
+    Accha laga to upar QR scan karein
+          Ek review zarur dein
 ==========================================
 ```
 
-- Composition-scheme Bill of Supply: the heading and declaration are printed on every bill. The GSTIN line appears once `SHOP_GSTIN` is set in **both** `print-agent/agent.py` and `src/lib/print-receipt.js` (still pending from the owner).
+Rules:
+- **Item Rs = MRP × qty** (no Rate column). Items saved without an MRP (old bills) show their line amount. **MRP Total** = sum of the Rs column, so the printed column always adds up.
+- **Discount** = MRP Total − TOTAL: item discounts, final price and cash round-off together (no separate Round Off line; the app stores them together).
+- **Return bills** print `RETURN — against MJF-0100` under the bill line, the refund amount per line, no MRP Total/Discount, and `REFUND Rs X` instead of TOTAL.
+- Bill number format stays `MJF-XXXX` (one running series; legally fine).
+- Composition-scheme Bill of Supply: the heading and declaration print at the top of every bill. The GSTIN line appears once `SHOP_GSTIN` is set in **both** `print-agent/agent.py` and `src/lib/print-receipt.js` (still pending from the owner).
 - The review QR points to `https://g.page/r/Cdj1aJR-po6TEBI/review`; the browser receipt uses `public/review-qr.png`.
-- All user text is escaped (HTML) or stripped of control characters (ESC/POS).
+- All bill text is escaped (HTML) or stripped of control characters (ESC/POS).
 
 ---
 

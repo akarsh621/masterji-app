@@ -558,6 +558,22 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 24. New receipt layout (Bill of Supply)
+
+### What changed
+- Bill of Supply heading and composition declaration moved to the top; shop block below; GSTIN line ready (shows once `SHOP_GSTIN` is set in `print-agent/agent.py` and `src/lib/print-receipt.js`)
+- `Bill: MJF-XXXX`; item lines show MRP × qty; MRP Total and Discount (everything off MRP, incl. round-off) above TOTAL
+- Payment line printed for every bill (not only split payments)
+- "For MASTER JI FASHION HOUSE / Authorised Signatory" block; new English thank-you lines
+- Return bills print "RETURN — against MJF-XXXX", refund per line and a REFUND total; the print job now carries `type` and `original_bill_number`
+
+### How to test
+1. Bill Book → a discounted sale → Yahan Print Karo: MRP Total − Discount = TOTAL
+2. Print a return: RETURN line, REFUND total, no Discount line
+3. Shop PC: after `update.bat`, print a test bill and check nothing wraps past the paper width
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

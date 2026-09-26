@@ -34,3 +34,19 @@ test('salesmen and anonymous callers cannot download agent files', async () => {
   assert.equal((await get('agent.py', { Authorization: `Bearer ${token(s1)}` })).status, 403);
   assert.equal((await get('agent.py', {})).status, 401);
 });
+
+test('a queued return tells the agent it is a return, and which bill it returned', async () => {
+  const { api, createSale, categories, billItems } = await import('./helpers.mjs');
+  const [kurti] = categories();
+  const sale = await createSale(s1, [[kurti.id, 1000, 900]], [{ mode: 'cash', amount: 900 }]);
+  const ret = await api(s1, 'POST', `/api/bills/${sale.bill_id}/return`, {
+    items: [{ bill_item_id: billItems(sale.bill_id)[0].id, quantity: 1 }], refund_mode: 'cash',
+  });
+  assert.equal(ret.status, 201, JSON.stringify(ret.body));
+  const returnId = ret.body.bill_id;
+  assert.equal((await api(s1, 'POST', '/api/print-queue', { bill_id: returnId })).status, 201);
+  const jobs = await (await fetch(`${BASE_URL}/api/print-queue`, { headers: agent })).json();
+  const job = jobs.find(j => j.bill_id === returnId);
+  assert.equal(job.type, 'return');
+  assert.equal(job.original_bill_number, sale.bill_number);
+});

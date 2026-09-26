@@ -121,16 +121,54 @@ def format_date(date_str):
         return date_str
 
 
+def receipt_lines(job):
+    """Item lines and totals for the receipt.
+
+    Sale lines show the MRP amount (MRP x qty) so the column adds up to
+    MRP Total; Discount is everything off MRP (item discounts, final price
+    and cash round-off). Return bills show the refund per line instead.
+    """
+    is_return = job.get('type') == 'return'
+    lines = []
+    for item in job.get('items', []):
+        qty = int(item.get('quantity', 1) or 1)
+        amount = float(item.get('amount', 0) or 0)
+        mrp = item.get('mrp')
+        if is_return or not mrp:
+            line_rs = amount  # refund, or a legacy line saved without MRP
+        else:
+            line_rs = float(mrp) * qty
+        lines.append((item.get('category_name') or 'Item', qty, int(round(line_rs))))
+    total = int(round(job.get('total', 0) or 0))
+    mrp_total = sum(l[2] for l in lines)
+    discount = max(mrp_total - total, 0) if not is_return else 0
+    return is_return, lines, mrp_total, discount, total
+
+
+def _lr(left, right):
+    """One 42-char line with `left` on the left and `right` on the right."""
+    gap = LINE_WIDTH - len(left) - len(right)
+    return '{}{}{}\n'.format(left, ' ' * max(gap, 1), right)
+
+
 # ── RAW ESC/POS Receipt Builder ──────────────────────────────────
 
 def build_receipt(job):
     """Build ESC/POS byte sequence for a receipt."""
+    is_return, lines, mrp_total, discount, total = receipt_lines(job)
     buf = bytearray()
     buf += INIT
     buf += BOLD_ON + DSTRIKE_ON
 
+    # Bill of Supply block -- required at the top for a composition dealer.
     buf += DOUBLE_LINE
-    buf += CENTER + DOUBLE_BOTH_ON
+    buf += CENTER
+    buf += encode('BILL OF SUPPLY\n')
+    buf += encode('Composition taxable person, not\n')
+    buf += encode('eligible to collect tax on supplies\n')
+    buf += DOUBLE_LINE
+
+    buf += DOUBLE_BOTH_ON
     buf += encode('MASTER JI\n')
     buf += encode('FASHION HOUSE\n')
     buf += NORMAL + BOLD_ON + DSTRIKE_ON
@@ -140,19 +178,12 @@ def build_receipt(job):
     if SHOP_GSTIN:
         buf += encode('GSTIN: {}\n'.format(SHOP_GSTIN))
     buf += DOUBLE_LINE
-    buf += encode('BILL OF SUPPLY\n')
-    buf += NORMAL
-    buf += encode('Composition taxable person, not\n')
-    buf += encode('eligible to collect tax on supplies\n')
-    buf += BOLD_ON + DSTRIKE_ON
 
     buf += LEFT
-    bill_num = job.get('bill_number', '')
-    date_str = format_date(job.get('created_at', ''))
-    gap = LINE_WIDTH - len(bill_num) - len(date_str)
-    if gap < 1:
-        gap = 1
-    buf += encode('{}{}{}\n'.format(bill_num, ' ' * gap, date_str))
+    buf += encode(_lr('Bill: {}'.format(job.get('bill_number', '')), format_date(job.get('created_at', ''))))
+    if is_return:
+        original = job.get('original_bill_number') or ''
+        buf += encode('RETURN{}\n'.format(' -- against {}'.format(original) if original else ''))
     salesman = job.get('salesman_name', '')
     if salesman:
         buf += encode('Salesman: {}\n'.format(salesman))
@@ -163,58 +194,49 @@ def build_receipt(job):
 
     buf += encode('{:<24s}{:>6s}{:>12s}\n'.format('Item', 'Qty', 'Rs'))
     buf += LINE
+    for name, qty, line_rs in lines:
+        buf += encode('{:<24s}{:>6d}{:>12s}\n'.format(name[:24], qty, rupees_bare(line_rs)))
 
-    items = job.get('items', [])
-    for item in items:
-        name = item.get('category_name', 'Item')[:24]
-        qty = item.get('quantity', 1)
-        amt = int(round(item.get('amount', 0)))
-        buf += encode('{:<24s}{:>6d}{:>12s}\n'.format(
-            name, qty, rupees_bare(amt)
-        ))
-    buf += LINE
-
-    mrp_total = job.get('mrp_total', 0)
-    total = job.get('total', 0)
-    saved = int(round(mrp_total - total)) if mrp_total else 0
-
-    if saved > 0:
-        buf += encode('{:<24s}{:>18s}\n'.format('Discount on MRP', rupees(saved)))
+    if not is_return:
+        buf += LINE
+        buf += encode(_lr('MRP Total', rupees(mrp_total)))
+        if discount > 0:
+            buf += encode(_lr('Discount', '-' + rupees(discount)))
 
     buf += DOUBLE_LINE
     buf += DOUBLE_BOTH_ON
-    buf += encode('{:<10s}{:>11s}\n'.format('TOTAL', rupees(total)))
+    buf += encode('{:<10s}{:>11s}\n'.format('REFUND' if is_return else 'TOTAL', rupees(total)))
     buf += NORMAL + BOLD_ON + DSTRIKE_ON
     buf += DOUBLE_LINE
 
     payments = job.get('payments', [])
-    if len(payments) > 1:
+    if payments:
         for p in payments:
-            mode = p.get('mode', '').upper()
-            amt = int(round(p.get('amount', 0)))
-            buf += encode('{:<24s}{:>18s}\n'.format(mode, rupees(amt)))
+            mode = (p.get('mode', '') or '').upper()
+            buf += encode(_lr(mode, rupees(int(round(p.get('amount', 0) or 0)))))
     else:
-        mode = (job.get('payment_mode', '') or 'cash').upper()
-        buf += CENTER
-        buf += encode('Payment: {}\n'.format(mode))
-        buf += LEFT
+        buf += encode(_lr((job.get('payment_mode', '') or 'cash').upper(), rupees(total)))
 
     notes = job.get('notes', '')
     if notes:
         buf += encode('\nNote: {}\n'.format(notes))
 
     buf += LINE
-
     buf += CENTER
     buf += encode('Exchange / Return sirf 7 din mein\n')
     buf += LINE
-    buf += b'\n'
-    buf += DOUBLE_HEIGHT_ON
-    buf += encode('Thank You For Shopping!\n')
-    buf += b'\n'
-    buf += encode('Naye kapdo me jach rahe ho,\n')
-    buf += encode('phir zarur aana :)\n')
-    buf += NORMAL + BOLD_ON + DSTRIKE_ON
+
+    # Space to sign above the signatory line.
+    buf += b'\n\n'
+    buf += RIGHT
+    buf += encode('For MASTER JI FASHION HOUSE\n')
+    buf += encode('Authorised Signatory\n')
+    buf += LEFT
+    buf += LINE
+
+    buf += CENTER
+    buf += encode('Thank you for shopping with us!\n')
+    buf += encode('We look forward to seeing you again.\n')
     buf += b'\n'
     buf += qr_code_bytes(GOOGLE_REVIEW_URL)
     buf += b'\n'
@@ -236,60 +258,56 @@ def build_receipt_html(job):
     """Build HTML receipt string (same layout as browser version)."""
     # Everything from the server is escaped before going into HTML, so text typed
     # into a bill (e.g. a note) can never be interpreted by the HTML printer.
+    is_return, lines, mrp_total, discount, total = receipt_lines(job)
     bill_num = html_escape(job.get('bill_number', '') or '')
     date_str = html_escape(format_date(job.get('created_at', '')))
     salesman = html_escape(job.get('salesman_name', '') or '')
-    total = job.get('total', 0)
-    mrp_total = job.get('mrp_total', 0)
-    saved = int(round(mrp_total - total)) if mrp_total else 0
+    customer = html_escape(job.get('customer_name', '') or '')
     notes = html_escape(job.get('notes', '') or '')
-    items = job.get('items', [])
     payments = job.get('payments', [])
-    payment_mode = html_escape((job.get('payment_mode', '') or 'cash').upper())
+
+    row = ('<div style="display:flex;justify-content:space-between">'
+           '<span>{}</span><span>{}</span></div>\n')
 
     items_rows = ''
-    for item in items:
-        name = html_escape(item.get('category_name', 'Item') or 'Item')
-        qty = int(item.get('quantity', 1))
-        amt = int(round(item.get('amount', 0)))
+    for name, qty, line_rs in lines:
         items_rows += (
             '<tr>'
             '<td style="text-align:left">{}</td>'
             '<td style="text-align:center">{}</td>'
             '<td style="text-align:right">{}</td>'
             '</tr>\n'
-        ).format(name, qty, rupees_html(amt))
+        ).format(html_escape(name), qty, rupees_html(line_rs))
 
-    if len(payments) > 1:
-        payment_html = '<div style="margin-top:6px">'
+    info_html = ''
+    if is_return:
+        original = html_escape(job.get('original_bill_number') or '')
+        info_html += '<div style="font-size:13px">RETURN{}</div>'.format(
+            ' &mdash; against {}'.format(original) if original else '')
+    if salesman:
+        info_html += '<div style="font-size:13px">Salesman: {}</div>'.format(salesman)
+    if customer:
+        info_html += '<div style="font-size:13px">Customer: {}</div>'.format(customer)
+
+    summary_html = ''
+    if not is_return:
+        summary_html += '<div class="divider"></div>\n'
+        summary_html += row.format('MRP Total', rupees_html(mrp_total))
+        if discount > 0:
+            summary_html += row.format('Discount', '-' + rupees_html(discount))
+
+    payment_html = ''
+    if payments:
         for p in payments:
-            mode = html_escape((p.get('mode', '') or '').upper())
-            amt = int(round(p.get('amount', 0)))
-            payment_html += (
-                '<div style="display:flex;justify-content:space-between">'
-                '<span>{}</span><span>{}</span>'
-                '</div>'
-            ).format(mode, rupees_html(amt))
-        payment_html += '</div>'
+            payment_html += row.format(html_escape((p.get('mode', '') or '').upper()),
+                                       rupees_html(int(round(p.get('amount', 0) or 0))))
     else:
-        payment_html = '<div style="margin-top:6px;text-align:center">Payment: {}</div>'.format(payment_mode)
+        payment_html = row.format(html_escape((job.get('payment_mode', '') or 'cash').upper()),
+                                  rupees_html(total))
 
     notes_html = ''
     if notes:
         notes_html = '<div style="margin-top:4px;font-size:13px;color:#000">Note: {}</div>'.format(notes)
-
-    discount_html = ''
-    if saved > 0:
-        discount_html = (
-            '<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">'
-            '<span>Discount on MRP</span>'
-            '<span>{}</span>'
-            '</div>'
-        ).format(rupees_html(saved))
-
-    salesman_html = ''
-    if salesman:
-        salesman_html = '<div style="font-size:13px">Salesman: {}</div>'.format(salesman)
 
     html = (
         '<!DOCTYPE html>\n'
@@ -313,6 +331,7 @@ def build_receipt_html(job):
         '  }}\n'
         '  .receipt {{ padding: 2mm; }}\n'
         '  .center {{ text-align: center; }}\n'
+        '  .right {{ text-align: right; }}\n'
         '  .bold {{ font-weight: 900; }}\n'
         '  .divider {{ border-top: 1px dashed #000; margin: 8px 0; }}\n'
         '  .double-divider {{ border-top: 3px solid #000; margin: 8px 0; }}\n'
@@ -325,19 +344,20 @@ def build_receipt_html(job):
         '<body>\n'
         '<div class="receipt">\n'
         '  <div class="double-divider"></div>\n'
+        '  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>\n'
+        '  <div class="center" style="font-size:11px">{composition_note}</div>\n'
+        '  <div class="double-divider"></div>\n'
         '  <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>\n'
         '  <div class="center" style="font-size:12px;margin-top:3px">C Block, Main Market Road<br>Shastri Nagar, Ghaziabad</div>\n'
         '  <div class="center" style="font-size:12px">Ph: 9540664066 / 0120-4245977</div>\n'
         '{gstin_html}'
         '  <div class="double-divider"></div>\n'
-        '  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>\n'
-        '  <div class="center" style="font-size:11px;margin-bottom:4px">{composition_note}</div>\n'
         '\n'
         '  <div style="display:flex;justify-content:space-between">\n'
-        '    <span class="bold">{bill_num}</span>\n'
+        '    <span class="bold">Bill: {bill_num}</span>\n'
         '    <span style="font-size:13px">{date_str}</span>\n'
         '  </div>\n'
-        '  {salesman_html}\n'
+        '  {info_html}\n'
         '  <div class="divider"></div>\n'
         '\n'
         '  <table>\n'
@@ -352,31 +372,23 @@ def build_receipt_html(job):
         '      {items_rows}\n'
         '    </tbody>\n'
         '  </table>\n'
-        '  <div class="divider"></div>\n'
-        '\n'
-        '  {discount_html}\n'
-        '\n'
+        '  {summary_html}\n'
         '  <div class="double-divider"></div>\n'
         '  <div style="display:flex;justify-content:space-between" class="total-row">\n'
-        '    <span>TOTAL</span>\n'
+        '    <span>{total_label}</span>\n'
         '    <span>{total_html}</span>\n'
         '  </div>\n'
-        '  <div class="divider"></div>\n'
+        '  <div class="double-divider"></div>\n'
         '\n'
         '  {payment_html}\n'
         '  {notes_html}\n'
         '  <div class="divider"></div>\n'
-        '\n'
-        '  <div class="center" style="font-size:13px;margin-top:6px">\n'
-        '    Exchange / Return sirf 7 din mein\n'
-        '  </div>\n'
+        '  <div class="center" style="font-size:13px">Exchange / Return sirf 7 din mein</div>\n'
         '  <div class="divider"></div>\n'
-        '  <div class="center bold" style="margin-top:10px;font-size:20px">\n'
-        '    Thank You For Shopping!\n'
-        '  </div>\n'
-        '  <div class="center bold" style="font-size:18px;margin-top:8px">\n'
-        '    Naye kapdo me jach rahe ho,<br>phir zarur aana :)\n'
-        '  </div>\n'
+        '\n'
+        '  <div class="right" style="font-size:13px;margin-top:28px">For MASTER JI FASHION HOUSE<br>Authorised Signatory</div>\n'
+        '  <div class="divider"></div>\n'
+        '  <div class="center" style="font-size:14px">Thank you for shopping with us!<br>We look forward to seeing you again.</div>\n'
         '\n'
         '  <div class="center" style="margin-top:10px">\n'
         '    <img src="{qr_url}" width="110" height="110" style="image-rendering:pixelated" />\n'
@@ -393,9 +405,10 @@ def build_receipt_html(job):
         date_str=date_str,
         gstin_html=('  <div class="center" style="font-size:12px">GSTIN: {}</div>\n'.format(SHOP_GSTIN) if SHOP_GSTIN else ''),
         composition_note=COMPOSITION_NOTE,
-        salesman_html=salesman_html,
+        info_html=info_html,
         items_rows=items_rows,
-        discount_html=discount_html,
+        summary_html=summary_html,
+        total_label='REFUND' if is_return else 'TOTAL',
         total_html=rupees_html(total),
         payment_html=payment_html,
         notes_html=notes_html,

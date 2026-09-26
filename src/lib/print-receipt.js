@@ -1,6 +1,5 @@
 import { normalizeSavedBill } from '@/lib/bill-data';
 
-const SHOP_NAME = 'MASTER JI FASHION HOUSE';
 const SHOP_ADDRESS = 'C Block, Main Market Road\nShastri Nagar, Ghaziabad';
 const SHOP_PHONE = 'Ph: 9540664066 / 0120-4245977';
 // Composition-scheme Bill of Supply: GSTIN plus the declaration required on
@@ -39,31 +38,49 @@ function rupees(n) {
   return '₹' + Math.round(n).toLocaleString('en-IN');
 }
 
+// Same layout as print-agent/agent.py. Sale lines show the MRP amount
+// (MRP x qty) so the column adds up to MRP Total; Discount is everything off
+// MRP (item discounts, final price and cash round-off). Return bills show the
+// refund per line and a REFUND total instead.
 export function buildReceiptHTML(bill) {
   const n = normalizeSavedBill(bill);
   const dateStr = formatDate(n.createdAt);
+  const isReturn = bill.type === 'return';
+  const rawItems = bill.items || [];
 
-  let itemsHTML = '';
-  for (const item of n.items) {
-    itemsHTML += `
+  const lines = n.items.map((item, i) => {
+    const mrp = Number(rawItems[i]?.mrp) || 0;
+    const lineRs = isReturn || !mrp ? item.amount : mrp * item.qty;
+    return { name: item.name, qty: item.qty, rs: Math.round(lineRs) };
+  });
+  const total = n.total;
+  const mrpTotal = lines.reduce((s, l) => s + l.rs, 0);
+  const discount = isReturn ? 0 : Math.max(mrpTotal - total, 0);
+
+  const row = (left, right) =>
+    `<div style="display:flex;justify-content:space-between"><span>${left}</span><span>${right}</span></div>`;
+
+  const itemsHTML = lines.map(l => `
       <tr>
-        <td style="text-align:left">${escapeHtml(item.name)}</td>
-        <td style="text-align:center">${escapeHtml(item.qty)}</td>
-        <td style="text-align:right">${rupees(item.amount)}</td>
-      </tr>`;
-  }
+        <td style="text-align:left">${escapeHtml(l.name)}</td>
+        <td style="text-align:center">${escapeHtml(l.qty)}</td>
+        <td style="text-align:right">${rupees(l.rs)}</td>
+      </tr>`).join('');
 
-  let paymentHTML = '';
-  if (n.payments.length > 1) {
-    paymentHTML = '<div style="margin-top:6px">';
-    for (const p of n.payments) {
-      paymentHTML += `<div style="display:flex;justify-content:space-between"><span>${escapeHtml(String(p.mode).toUpperCase())}</span><span>${rupees(p.amount)}</span></div>`;
-    }
-    paymentHTML += '</div>';
-  } else {
-    const mode = (bill.payment_mode || n.payments[0]?.mode || 'cash').toUpperCase();
-    paymentHTML = `<div style="margin-top:6px;text-align:center">Payment: ${escapeHtml(mode)}</div>`;
-  }
+  const infoHTML = [
+    isReturn ? `<div style="font-size:13px">RETURN${bill.original_bill_number ? ` &mdash; against ${escapeHtml(bill.original_bill_number)}` : ''}</div>` : '',
+    n.salesmanName ? `<div style="font-size:13px">Salesman: ${escapeHtml(n.salesmanName)}</div>` : '',
+    bill.customer_name ? `<div style="font-size:13px">Customer: ${escapeHtml(bill.customer_name)}</div>` : '',
+  ].join('');
+
+  const summaryHTML = isReturn ? '' : `
+  <div class="divider"></div>
+  ${row('MRP Total', rupees(mrpTotal))}
+  ${discount > 0 ? row('Discount', '-' + rupees(discount)) : ''}`;
+
+  const paymentHTML = n.payments.length > 0
+    ? n.payments.map(p => row(escapeHtml(String(p.mode).toUpperCase()), rupees(p.amount))).join('')
+    : row(escapeHtml((bill.payment_mode || 'cash').toUpperCase()), rupees(total));
 
   const notesHTML = n.notes
     ? `<div style="margin-top:4px;font-size:13px;color:#000">Note: ${escapeHtml(n.notes)}</div>`
@@ -90,6 +107,7 @@ export function buildReceiptHTML(bill) {
   }
   .receipt { padding: 2mm; }
   .center { text-align: center; }
+  .right { text-align: right; }
   .bold { font-weight: 900; }
   .divider { border-top: 1px dashed #000; margin: 8px 0; }
   .double-divider { border-top: 3px solid #000; margin: 8px 0; }
@@ -97,7 +115,6 @@ export function buildReceiptHTML(bill) {
   th { padding: 4px 0; font-size: 13px; font-weight: 900; border-bottom: 2px solid #000; }
   td { padding: 4px 0; font-size: 14px; font-weight: bold; }
   .total-row { font-size: 20px; font-weight: 900; }
-  .discount-row { color: #000; }
   @media screen {
     body { margin: 10px auto; border: 1px dashed #ccc; padding: 4px; background: #fff; }
   }
@@ -105,23 +122,25 @@ export function buildReceiptHTML(bill) {
 </head>
 <body>
 <div class="receipt">
-  <!-- Header -->
+  <!-- Bill of Supply: required at the top for a composition dealer -->
   <div class="double-divider"></div>
+  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>
+  <div class="center" style="font-size:11px">${COMPOSITION_NOTE}</div>
+  <div class="double-divider"></div>
+
+  <!-- Shop -->
   <div class="center bold" style="font-size:22px;letter-spacing:1px">MASTER JI<br>FASHION HOUSE</div>
   <div class="center" style="font-size:12px;margin-top:3px;white-space:pre-line">${SHOP_ADDRESS}</div>
   <div class="center" style="font-size:12px">${SHOP_PHONE}</div>
   ${SHOP_GSTIN ? `<div class="center" style="font-size:12px">GSTIN: ${SHOP_GSTIN}</div>` : ''}
   <div class="double-divider"></div>
-  <div class="center bold" style="font-size:14px;letter-spacing:1px">BILL OF SUPPLY</div>
-  <div class="center" style="font-size:11px;margin-bottom:4px">${COMPOSITION_NOTE}</div>
 
   <!-- Bill info -->
   <div style="display:flex;justify-content:space-between">
-    <span class="bold">${escapeHtml(n.billNumber)}</span>
+    <span class="bold">Bill: ${escapeHtml(n.billNumber)}</span>
     <span style="font-size:13px">${escapeHtml(dateStr)}</span>
   </div>
-  ${n.salesmanName ? `<div style="font-size:13px">Salesman: ${escapeHtml(n.salesmanName)}</div>` : ''}
-  ${bill.customer_name ? `<div style="font-size:13px">Customer: ${escapeHtml(bill.customer_name)}</div>` : ''}
+  ${infoHTML}
   <div class="divider"></div>
 
   <!-- Items -->
@@ -137,41 +156,29 @@ export function buildReceiptHTML(bill) {
       ${itemsHTML}
     </tbody>
   </table>
-  <div class="divider"></div>
-
-  <!-- Discount Given -->
-  ${n.totalDiscount > 0 ? `
-  <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
-    <span>Discount on MRP</span>
-    <span>${rupees(n.totalDiscount)}</span>
-  </div>` : ''}
+  ${summaryHTML}
 
   <!-- Total -->
   <div class="double-divider"></div>
   <div style="display:flex;justify-content:space-between" class="total-row">
-    <span>TOTAL</span>
-    <span>${rupees(n.total)}</span>
+    <span>${isReturn ? 'REFUND' : 'TOTAL'}</span>
+    <span>${rupees(total)}</span>
   </div>
-  <div class="divider"></div>
+  <div class="double-divider"></div>
 
   <!-- Payment -->
   ${paymentHTML}
   ${notesHTML}
   <div class="divider"></div>
+  <div class="center" style="font-size:13px">Exchange / Return sirf 7 din mein</div>
+  <div class="divider"></div>
+
+  <!-- Signatory (space above to sign) -->
+  <div class="right" style="font-size:13px;margin-top:28px">For MASTER JI FASHION HOUSE<br>Authorised Signatory</div>
+  <div class="divider"></div>
 
   <!-- Footer -->
-  <div class="center" style="font-size:13px;margin-top:6px">
-    Exchange / Return sirf 7 din mein
-  </div>
-  <div class="divider"></div>
-  <div class="center bold" style="margin-top:10px;font-size:20px">
-    Thank You For Shopping!
-  </div>
-  <div class="center bold" style="font-size:18px;margin-top:8px">
-    Naye kapdo me jach rahe ho,<br>phir zarur aana :)
-  </div>
-
-  <!-- QR Code -->
+  <div class="center" style="font-size:14px">Thank you for shopping with us!<br>We look forward to seeing you again.</div>
   <div class="center" style="margin-top:10px">
     <img src="${qrImgUrl()}" width="110" height="110" style="image-rendering:pixelated" />
   </div>
