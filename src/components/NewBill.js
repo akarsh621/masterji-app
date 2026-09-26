@@ -57,7 +57,7 @@ function formatBackdateLabel(ymd) {
   return `${d} ${monthNames[dt.getUTCMonth()]} ${y}`;
 }
 
-export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange }) {
+export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange, newBillRequest = 0 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [salesmen, setSalesmen] = useState([]);
@@ -296,6 +296,20 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
     if (!window.confirm('Ye bill cancel karein? Saare items hat jayenge.')) return;
     resetBill();
   };
+
+  // Tapping "Naya Bill" in the bottom bar while already here starts a fresh bill.
+  const lastNewBillRequest = useRef(newBillRequest);
+  useEffect(() => {
+    if (newBillRequest === lastNewBillRequest.current) return;
+    lastNewBillRequest.current = newBillRequest;
+    if (success) {
+      setSuccess(null);
+      setPrintStatus(null);
+      return;
+    }
+    if (items.length > 0 && !window.confirm('Naya bill shuru karein? Abhi wala bill hat jayega.')) return;
+    resetBill();
+  }, [newBillRequest]);
 
   // The tapped number is the line total, so the edit is the new line total.
   const commitPriceEdit = (index) => {
@@ -538,14 +552,7 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange 
   if (screen === 'items') {
     return (
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold">Naya Bill</h2>
-          {items.length > 0 && !replacesBill && (
-            <button onClick={cancelBill} className="text-sm font-medium text-red-600 px-3 py-2 -my-2 -mr-3">
-              Bill cancel karo
-            </button>
-          )}
-        </div>
+        <h2 className="text-lg font-bold mb-3">Naya Bill</h2>
 
         {replacesBill && (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">

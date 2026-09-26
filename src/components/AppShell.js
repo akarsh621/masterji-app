@@ -31,6 +31,7 @@ export default function AppShell() {
   const [activeTab, setActiveTab] = useState('new-bill');
   const [prefillData, setPrefillData] = useState(null);
   const [billInProgress, setBillInProgress] = useState(false);
+  const [newBillRequest, setNewBillRequest] = useState(0);
 
   const handleLogout = () => {
     if (billInProgress && !window.confirm('Bill abhi save nahi hua hai. Phir bhi logout karein?')) return;
@@ -100,7 +101,7 @@ export default function AppShell() {
             never lost by glancing at Bill Book or Aaj. Other tabs remount on
             every visit so they always show fresh data. */}
         <div hidden={activeTab !== 'new-bill'}>
-          <NewBill prefillData={prefillData} onPrefillConsumed={handlePrefillConsumed} onDraftChange={setBillInProgress} />
+          <NewBill prefillData={prefillData} onPrefillConsumed={handlePrefillConsumed} onDraftChange={setBillInProgress} newBillRequest={newBillRequest} />
         </div>
         {activeTab !== 'new-bill' && renderContent()}
       </main>
@@ -110,7 +111,12 @@ export default function AppShell() {
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                // Already on Naya Bill: the tab doubles as "start a new bill".
+                // From any other tab it just returns to the bill in progress.
+                if (tab.id === 'new-bill' && activeTab === 'new-bill') setNewBillRequest(n => n + 1);
+                setActiveTab(tab.id);
+              }}
               className={`flex-1 py-3 text-center transition-colors ${
                 activeTab === tab.id
                   ? 'text-blue-600 font-medium'
