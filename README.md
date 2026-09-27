@@ -233,7 +233,8 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 | GET | `/api/auth/salesmen` | Public | List active salesmen names (for login screen + selectors) |
 | POST | `/api/bills` | Bearer | Create bill with items + payments array. `replaces_bill_id` = Edit Bill |
 | GET | `/api/bills` | Bearer | List bills (paginated, filtered, `?q=` search across all dates) -- any date for all users |
-| DELETE | `/api/bills/:id` | Bearer | Soft-delete (admin: any time; salesman: own bills within 15 min) |
+| DELETE | `/api/bills/:id` | Bearer | Cancel (soft delete). Admin: any bill in an open quarter; salesman: own bills within 1 hour |
+| PUT | `/api/bills/:id` | Admin | Edit a bill in place (same number/date; same checks as a new bill; drawer by cash difference) |
 | POST | `/api/bills/:id/return` | Bearer | Return specific lines (salesman: bills up to 7 days old; refund Cash/UPI) |
 | GET | `/api/categories` | Bearer | List categories (grouped). `?all=true` includes inactive. |
 | POST | `/api/categories` | Admin | Add new category |

@@ -246,6 +246,21 @@ const MIGRATIONS = [
         AND salesman_id != (SELECT o.salesman_id FROM bills o WHERE o.id = bills.original_bill_id)
     `);
   },
+  // v13: Admin's in-place bill edit. Silent by owner decision (no old values
+  // kept), but stamped: who edited when, plus the cash difference each edit
+  // made, which Hisaab needs to explain the drawer.
+  (db) => {
+    addColumnIfMissing(db, 'bills', 'edited_at', 'TEXT');
+    addColumnIfMissing(db, 'bills', 'edited_by', 'INTEGER REFERENCES users(id)');
+    db.exec(`CREATE TABLE IF NOT EXISTS bill_edits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bill_id INTEGER NOT NULL REFERENCES bills(id),
+      edited_at TEXT NOT NULL,
+      edited_by INTEGER NOT NULL REFERENCES users(id),
+      cash_delta REAL NOT NULL DEFAULT 0
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_bill_edits_edited_at ON bill_edits(edited_at)');
+  },
 ];
 
 function addColumnIfMissing(db, table, column, definition) {

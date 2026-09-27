@@ -447,7 +447,8 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
         notes,
         client_request_id: billRequestId.current,
       };
-      if (replacesBill) {
+      // Salesman's edit: cancel + new linked bill. Admin's edit goes in place (PUT).
+      if (replacesBill && !replacesBill.inPlace) {
         billPayload.replaces_bill_id = replacesBill.id;
       }
       if (customerPhoneValid) {
@@ -460,7 +461,9 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
       if (!replacesBill && backdateValue && backdateValue !== todayIST()) {
         billPayload.bill_date = backdateValue;
       }
-      const result = await api.createBill(billPayload);
+      const result = replacesBill?.inPlace
+        ? await api.updateBill(replacesBill.id, billPayload)
+        : await api.createBill(billPayload);
       setSuccess(result);
       resetBill();
       setTimeout(() => { submitLock.current = false; }, 2000);
@@ -495,7 +498,9 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
     return (
       <div className="text-center py-12">
         <div className="text-5xl mb-4">✓</div>
-        <h2 className="text-xl font-bold text-green-700 mb-2">Bill Ban Gaya!</h2>
+        <h2 className="text-xl font-bold text-green-700 mb-2">
+          {success.edited_in_place ? 'Bill Update Ho Gaya!' : 'Bill Ban Gaya!'}
+        </h2>
         <p className="text-gray-600 mb-1">{success.bill_number}</p>
         {success.replaces_bill_number && (
           <p className="text-sm text-amber-700 mb-1">{success.replaces_bill_number} ki jagah</p>
@@ -590,7 +595,9 @@ export default function NewBill({ prefillData, onPrefillConsumed, onDraftChange,
         {replacesBill && (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="text-sm text-amber-900">
-              Bill <span className="font-semibold">{replacesBill.bill_number}</span> edit kar rahe ho — save karne par purana bill cancel ho jayega.
+              Bill <span className="font-semibold">{replacesBill.bill_number}</span> edit kar rahe ho — {replacesBill.inPlace
+                ? 'save karne par isi bill mein badlav hoga.'
+                : 'save karne par purana bill cancel ho jayega.'}
             </div>
             <button
               onClick={resetBill}

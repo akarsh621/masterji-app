@@ -92,6 +92,7 @@ export const api = {
     return apiRequest(`/bills?${qs}`);
   },
   deleteBill: (id) => apiRequest(`/bills/${id}`, { method: 'DELETE' }),
+  updateBill: (id, data) => apiRequest(`/bills/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   getDashboard: (params) => {
     const qs = new URLSearchParams(params).toString();

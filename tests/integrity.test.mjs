@@ -218,6 +218,25 @@ async function opEditSale() {
   if (!sale.backdated) model.drawer = r2(model.drawer + cashOf(body.payments) - sale.cash);
 }
 
+// Admin's in-place edit: same bill id and date, new lines and payments.
+async function opEditInPlace() {
+  if (!model.sales.size) return;
+  const sale = pick([...model.sales.values()]);
+  const { body, expectedTotal } = genSaleBody();
+  delete body.client_request_id;
+  const res = await api(admin, 'PUT', `/api/bills/${sale.id}`, body);
+  if (liveReturnsOf(sale.id).length) {
+    assert.equal(res.status, 409, 'a sale with an active return must not be editable in place');
+    return;
+  }
+  assert.equal(res.status, 200, `in-place edit refused: ${JSON.stringify(res.body)}`);
+  near(res.body.total, expectedTotal, 'server total for an in-place edit');
+  assert.equal(res.body.bill_number, sale.bill_number, 'in-place edit keeps the bill number');
+  if (!sale.backdated) model.drawer = r2(model.drawer + cashOf(body.payments) - sale.cash);
+  model.sales.delete(sale.id);
+  recordSale({ ...res.body, bill_id: sale.id }, body, { backdated: sale.backdated, date: sale.date, isEdit: true });
+}
+
 async function opCashOut() {
   const amount = 100 * (1 + int(20));
   const res = await api(admin, 'POST', '/api/cash-out', {
@@ -305,7 +324,7 @@ test(`money integrity under ${OPS} random operations (seed ${SEED})`, { timeout:
 
   const weights = [
     [opSale, 34], [() => opSale({ backdated: true }), 4], [opReturn, 22], [opCancelReturn, 6],
-    [opCancelSale, 8], [opEditSale, 10], [opCashOut, 5], [async () => ageBill(), 3],
+    [opCancelSale, 8], [opEditSale, 6], [opEditInPlace, 8], [opCashOut, 5], [async () => ageBill(), 3],
   ];
   const totalWeight = weights.reduce((s, [, w]) => s + w, 0);
   for (let i = 0; i < OPS; i++) {

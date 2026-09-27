@@ -69,11 +69,14 @@ From Bill Book → **Return**. Pick lines and quantities (remaining returnable q
 
 ### 3.3 Corrections: Edit Bill and Cancel Bill
 
+One action, one meaning: **Edit Bill** is the only way to correct a bill; **Cancel Bill** only cancels.
+
 A saved bill is never edited in place.
 
 - **Edit Bill** opens the bill pre-filled in Naya Bill ("Bill MJF-0104 edit kar rahe ho", with **Cancel editing**). On save, one server transaction cancels the old bill and creates the new one (`replaces_bill_id`), keeping the original date and salesman. The drawer moves only by the cash difference. Shown as "MJF-0104 ki jagah" / linked both ways.
 - **Cancel Bill** soft-deletes the bill (`deleted_at`) and reverses its cash (unless backdated). Blocked if the bill has an active return ("Pehle iska return bill cancel karo").
-- Permissions for both: salesman only their own bill within 15 minutes; admin any bill **except bills in a GST quarter that's already closed** (locked from the 11th of the month after the quarter ends; those can only be returned). Backdating can't reach a closed quarter either.
+- **Admin's Edit Bill is in place** ("…save karne par isi bill mein badlav hoga"): same bill number and date, new items/payments/customer; validated exactly like a new bill (`src/lib/bill-input.js`); drawer moves by the cash difference (never for backdated bills); silent except a hidden `edited_at` / `edited_by` stamp and a `bill_edits` row holding the cash difference (for Hisaab and the audit). The Edit Bill described above (cancel + reissue) is the **salesman's** version.
+- Permissions for both: salesman only their own bill within 1 hour; admin any bill **except bills in a GST quarter that's already closed** (locked from the 11th of the month after the quarter ends; those can only be returned). Backdating can't reach a closed quarter either.
 
 ### 3.4 Cash drawer (Hisaab)
 
@@ -232,7 +235,7 @@ railway.json           build/start commands, health check /api/auth/salesmen
 | `customers` | `phone` (unique, 10 digits), `name`, `first_seen_at`, `last_seen_at` |
 | `login_attempts` | failed logins per account + IP (lockouts) |
 
-Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **12**. Notable: v8 money integrity (backdated flag, request ids, Edit Bill link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers, v12 re-credit old returns to the original salesman.
+Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **13**. Notable: v8 money integrity (backdated flag, request ids, Edit Bill link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers , v12 re-credit old returns to the original salesman, v13 admin in-place edit stamp (`bills.edited_at/edited_by`, `bill_edits`).
 
 ### 5.3 Security
 
@@ -333,4 +336,4 @@ Planned as a separate project after Project 1. Key decisions already made (they 
 - **Suppliers** with city; lots link to the `stock_purchase` expense.
 - Intake on phone and PC ("add to list, then print all tags for the lot"); tags print from the shop PC agent.
 - Scan on Naya Bill = add to bill with MRP pre-filled (discount still typed); never block a sale on zero stock.
-- Migrations continue from **v13**.
+- Migrations continue from **v14**.

@@ -28,9 +28,10 @@ The shop is registered under the **GST composition scheme**. The app's figures a
 
 | Decision | Why | When |
 |---|---|---|
-| **A saved bill is never changed in place.** Corrections are **Edit Bill** = cancel + reissue in one step, linked both ways, keeping the original date and salesman. (Called "Bill badlo" until 27 Sep 2026.) | The printed receipt, the drawer and the tax figures must match what was saved. | Sep 2026 |
+| **Two kinds of Edit Bill.** **Salesman**: cancel + reissue in one step (old bill kept as the record, new bill linked), own bills only. **Admin**: edits the bill **in place** -- same number and date, silent (nothing shown in Bill Book or on the receipt), but money-safe: the same checks as a new bill, one transaction, drawer moves by the cash difference, never for backdated bills, blocked by an active return or a closed quarter. A hidden stamp (edited_at / edited_by, plus the cash difference in `bill_edits`) is kept for the audit and Hisaab. After either edit the app offers Print; the reprint has **no "Revised" mark**. (Before 27 Sep 2026 every edit was cancel + reissue; called "Bill badlo" earlier.) | Admin needed to fix bills without new numbers; salesmen's changes stay traceable. | 27 Sep 2026 |
+| **One action, one meaning:** Edit Bill is the only way to correct a bill; **Cancel Bill only cancels** (no "make a new bill instead" follow-up). | No duplicate flows. | 27 Sep 2026 |
 | Edit Bill moves the drawer only by the **cash difference**, and never for backdated bills. | ₹960 cash corrected to ₹900 cash is −₹60, not −₹960 then +₹900. | Sep 2026 |
-| **Salesmen** can cancel or edit only **their own bill within 15 minutes**; admin any bill (except closed quarters). | Mistakes are caught at the counter; later changes need the owner. | Sep 2026 |
+| **Salesmen** can cancel or edit only **their own bill within 1 hour** (was 15 minutes); admin any bill (except closed quarters). | Mistakes are caught at the counter; later changes need the owner. | 27 Sep 2026 |
 | A sale **with an active return can't be cancelled or edited** until the return is cancelled. | Otherwise the refund stays counted against a bill that no longer exists. | Sep 2026 |
 | **Returns**: salesmen up to **7 days**, admin any age. | Matches "Exchange / Return sirf 7 din mein" on the receipt. | Sep 2026 |
 | Refund = **what the customer actually paid** for those pieces (share after bill discount and round-off); never more than the bill total. | Refunds at pre-discount prices were paying out more than was received. | Sep 2026 |

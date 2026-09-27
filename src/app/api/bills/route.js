@@ -2,26 +2,20 @@ import { NextResponse } from 'next/server';
 import { getDb, generateBillNumber, updateCashDrawer, getISTNow } from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 import { isValidDate, todayIST, daysBetweenYMD, isQuarterLocked, quarterLabel, quarterLockedMessage } from '@/lib/date-utils';
-import { normalizePhone, isValidPhone } from '@/lib/phone';
-import { MAX_MRP, MAX_QTY_PER_LINE } from '@/lib/limits';
+import { SALESMAN_CHANGE_MINUTES } from '@/lib/limits';
+import { parseBillInput, upsertCustomer } from '@/lib/bill-input';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_PAYMENT_MODES = new Set(['cash', 'upi', 'card']);
 const VALID_FILTER_MODES = new Set(['cash', 'upi', 'card', 'mixed']);
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const BACKDATE_MAX_DAYS = 30;
-const SALESMAN_EDIT_MINUTES = 15; // same window as cancelling a bill
 
 class ReplaceError extends Error {
   constructor(message, status) {
     super(message);
     this.status = status;
   }
-}
-
-function round2(value) {
-  return Math.round(value * 100) / 100;
 }
 
 function isDateOnly(value) {
@@ -36,29 +30,23 @@ export async function POST(request) {
     }
 
     const body = await request.json().catch(() => null);
-    const items = body?.items;
-    const payments = body?.payments;
-    const discount_percent_input = Number(body?.discount_percent ?? 0);
-    // When the client sends discount_amount (even 0) it is the source of truth;
-    // the percent is only a fallback for clients that send nothing else.
-    const hasDiscountAmount = typeof body?.discount_amount === 'number';
-    const discount_amount_input = Number(body?.discount_amount ?? 0);
-    const clientRequestId = typeof body?.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
-    // "Edit Bill": this bill replaces an existing one (cancel + reissue in one step).
-    const replacesBillId = body?.replaces_bill_id ? Number(body.replaces_bill_id) : null;
-    // Optional customer. Invalid numbers are refused: a half-typed number is
-    // worse than none in a customer list.
-    const customerPhoneRaw = typeof body?.customer_phone === 'string' ? body.customer_phone.trim() : '';
-    const customerPhone = customerPhoneRaw ? normalizePhone(customerPhoneRaw) : '';
-    const customerName = typeof body?.customer_name === 'string' ? body.customer_name.trim().slice(0, 60) : '';
-    if (customerPhoneRaw && !isValidPhone(customerPhone)) {
-      return NextResponse.json({ error: 'Customer ka mobile number sahi nahi hai (10 digit)' }, { status: 400 });
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Request data galat hai' }, { status: 400 });
     }
-    let notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
-    const billType = 'sale';
-    const originalBillId = null;
+    const clientRequestId = typeof body.client_request_id === 'string' ? body.client_request_id.slice(0, 100) : null;
+    // Salesman's "Edit Bill": this bill replaces an existing one (cancel +
+    // reissue in one step, old bill kept and linked). Admin edits in place instead
+    // (PUT /api/bills/[id]).
+    const replacesBillId = body.replaces_bill_id ? Number(body.replaces_bill_id) : null;
 
-    const billDateInput = !replacesBillId && typeof body?.bill_date === 'string' ? body.bill_date.trim() : '';
+    const db = getDb();
+    const input = parseBillInput(body, result.user, db);
+    if (input.error) {
+      return NextResponse.json({ error: input.error }, { status: input.status });
+    }
+    let notes = input.notes;
+
+    const billDateInput = !replacesBillId && typeof body.bill_date === 'string' ? body.bill_date.trim() : '';
     const today = todayIST();
     let isBackdated = false;
     let backdatedCreatedAt = null;
@@ -86,124 +74,19 @@ export async function POST(request) {
       }
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'Kam se kam ek item daalo' }, { status: 400 });
-    }
-
-    if (!payments || !Array.isArray(payments) || payments.length === 0) {
-      return NextResponse.json({ error: 'Kam se kam ek payment mode daalo' }, { status: 400 });
-    }
-
-    if (items.length > 100 || payments.length > 3) {
-      return NextResponse.json({ error: 'Bill mein bahut zyada items ya payments hain' }, { status: 400 });
-    }
-    if (notes.length > 500) {
-      return NextResponse.json({ error: 'Note 500 characters se chhota rakho' }, { status: 400 });
-    }
-
-    for (const [i, p] of payments.entries()) {
-      if (!VALID_PAYMENT_MODES.has(p?.mode)) {
-        return NextResponse.json({ error: `Payment ${i + 1}: mode cash, upi ya card hona chahiye` }, { status: 400 });
-      }
-      const amt = Number(p?.amount);
-      if (!Number.isFinite(amt) || amt <= 0) {
-        return NextResponse.json({ error: `Payment ${i + 1}: amount galat hai` }, { status: 400 });
-      }
-    }
-
-    if (!Number.isFinite(discount_amount_input) || discount_amount_input < 0) {
-      return NextResponse.json({ error: 'Discount amount galat hai' }, { status: 400 });
-    }
-    if (!Number.isFinite(discount_percent_input) || discount_percent_input < 0 || discount_percent_input > 100) {
-      return NextResponse.json({ error: 'Discount 0-100% ke beech hona chahiye' }, { status: 400 });
-    }
-
-    const normalizedItems = [];
-    for (const [index, item] of items.entries()) {
-      const categoryId = Number(item?.category_id);
-      const quantity = Number(item?.quantity);
-      const amount = Number(item?.amount);
-      const mrp = item?.mrp != null ? Number(item.mrp) : null;
-
-      if (!Number.isInteger(categoryId) || categoryId <= 0) {
-        return NextResponse.json({ error: `Item ${index + 1}: category galat hai` }, { status: 400 });
-      }
-      if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QTY_PER_LINE) {
-        return NextResponse.json({ error: `Item ${index + 1}: quantity galat hai` }, { status: 400 });
-      }
-      if (!Number.isFinite(amount) || amount <= 0) {
-        return NextResponse.json({ error: `Item ${index + 1}: amount galat hai` }, { status: 400 });
-      }
-      if (mrp !== null && (!Number.isFinite(mrp) || mrp <= 0)) {
-        return NextResponse.json({ error: `Item ${index + 1}: MRP galat hai` }, { status: 400 });
-      }
-      if ((mrp ?? amount / quantity) > MAX_MRP) {
-        return NextResponse.json({ error: `Item ${index + 1}: MRP ₹${MAX_MRP.toLocaleString('en-IN')} se zyada nahi ho sakta — check karo` }, { status: 400 });
-      }
-      if (mrp !== null && amount > mrp * quantity + 0.01) {
-        return NextResponse.json({ error: `Item ${index + 1}: amount MRP se zyada nahi ho sakta` }, { status: 400 });
-      }
-
-      normalizedItems.push({
-        category_id: categoryId,
-        mrp: mrp ? round2(mrp) : null,
-        quantity,
-        amount: round2(amount),
-      });
-    }
-
-    const subtotal = round2(normalizedItems.reduce((sum, item) => sum + item.amount, 0));
-    const mrp_total = round2(normalizedItems.reduce((sum, item) => sum + ((item.mrp || (item.amount / item.quantity)) * item.quantity), 0));
-    const rawDiscountAmt = hasDiscountAmount
-      ? discount_amount_input
-      : round2(subtotal * (discount_percent_input / 100));
-    const discount_amount = round2(Math.min(rawDiscountAmt, subtotal));
-    const total = round2(subtotal - discount_amount);
-    // Stored percent is always derived from the amount, so the two never disagree.
-    const discount_percent = subtotal > 0 ? round2((discount_amount / subtotal) * 100) : 0;
-
-    if (total <= 0) {
-      return NextResponse.json({ error: 'Total amount 0 se zyada hona chahiye' }, { status: 400 });
-    }
-
-    const normalizedPayments = payments.map(p => ({ mode: p.mode, amount: round2(Number(p.amount)) }));
-    const paymentSum = round2(normalizedPayments.reduce((s, p) => s + p.amount, 0));
-    if (Math.abs(paymentSum - total) > 0.01) {
-      return NextResponse.json({ error: `Payment total (₹${paymentSum}) bill total (₹${total}) se match nahi karta` }, { status: 400 });
-    }
-
-    const modes = [...new Set(normalizedPayments.map(p => p.mode))];
-    const paymentMode = modes.length === 1 ? modes[0] : 'mixed';
-
-    const db = getDb();
-
-    let effectiveSalesmanId = result.user.id;
-    let effectiveSalesmanName = result.user.name;
-    const requestedSalesmanId = body?.salesman_id ? Number(body.salesman_id) : null;
-    if (requestedSalesmanId) {
-      const targetUser = db.prepare('SELECT id, name, active FROM users WHERE id = ?').get(requestedSalesmanId);
-      if (!targetUser || !targetUser.active) {
-        return NextResponse.json({ error: 'Selected salesman invalid hai' }, { status: 400 });
-      }
-      effectiveSalesmanId = targetUser.id;
-      effectiveSalesmanName = targetUser.name;
-    }
-
-    const uniqueCategoryIds = [...new Set(normalizedItems.map(item => item.category_id))];
-    const placeholders = uniqueCategoryIds.map(() => '?').join(',');
-    const existingCategories = db.prepare(
-      `SELECT id, name FROM categories WHERE id IN (${placeholders})`
-    ).all(...uniqueCategoryIds);
-    if (existingCategories.length !== uniqueCategoryIds.length) {
-      return NextResponse.json({ error: 'Ek ya zyada category invalid hai' }, { status: 400 });
-    }
-    const categoryNameMap = Object.fromEntries(existingCategories.map(c => [c.id, c.name]));
+    const {
+      items: normalizedItems, payments: normalizedPayments, subtotal, mrpTotal: mrp_total,
+      discountAmount: discount_amount, discountPercent: discount_percent, total, paymentMode,
+      cashAmount, requestedSalesmanId, customerPhone, customerName, categoryNameMap,
+    } = input;
+    let effectiveSalesmanId = input.salesman.id;
+    let effectiveSalesmanName = input.salesman.name;
 
     const insertBill = db.prepare(`
       INSERT INTO bills (bill_number, subtotal, mrp_total, discount_percent, discount_amount, total, payment_mode,
                          salesman_id, notes, type, original_bill_id, is_backdated, client_request_id, replaces_bill_id,
                          customer_id, customer_name, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sale', NULL, ?, ?, ?, ?, ?, COALESCE(?, datetime('now', '+5 hours', '+30 minutes')))
     `);
 
     const insertItem = db.prepare(`
@@ -232,26 +115,11 @@ export async function POST(request) {
       const billIsBackdated = replacing ? !!replacing.is_backdated : isBackdated;
       const createdAt = replacing ? replacing.created_at : (isBackdated ? backdatedCreatedAt : null);
 
-      let customerId = null;
-      let billCustomerName = customerName || null;
-      if (customerPhone) {
-        const seenAt = createdAt || getISTNow();
-        const existing = db.prepare('SELECT id, name FROM customers WHERE phone = ?').get(customerPhone);
-        if (existing) {
-          customerId = existing.id;
-          db.prepare(`UPDATE customers SET name = COALESCE(?, name),
-                         last_seen_at = MAX(COALESCE(last_seen_at, ''), ?) WHERE id = ?`)
-            .run(customerName || null, seenAt, existing.id);
-          if (!billCustomerName) billCustomerName = existing.name || null;
-        } else {
-          customerId = db.prepare('INSERT INTO customers (phone, name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?)')
-            .run(customerPhone, customerName || null, seenAt, seenAt).lastInsertRowid;
-        }
-      }
+      const customer = upsertCustomer(db, customerPhone, customerName, createdAt || getISTNow());
       const billResult = insertBill.run(
         billNumber, subtotal, mrp_total, discount_percent, discount_amount, total, paymentMode,
-        effectiveSalesmanId, notes, billType, originalBillId, billIsBackdated ? 1 : 0, clientRequestId,
-        replacing ? replacing.id : null, customerId, billCustomerName, createdAt
+        effectiveSalesmanId, notes, billIsBackdated ? 1 : 0, clientRequestId,
+        replacing ? replacing.id : null, customer.customerId, customer.customerName, createdAt
       );
       const billId = billResult.lastInsertRowid;
 
@@ -263,9 +131,6 @@ export async function POST(request) {
         insertPayment.run(billId, p.mode, p.amount);
       }
 
-      const cashAmount = normalizedPayments
-        .filter(p => p.mode === 'cash')
-        .reduce((s, p) => s + p.amount, 0);
       if (replacing) {
         // Only the difference moves the drawer (₹960 cash corrected to ₹900 cash
         // is -₹60), and only if the original bill ever touched the drawer.
@@ -316,8 +181,8 @@ export async function POST(request) {
         if (replacing.salesman_id !== result.user.id) {
           return NextResponse.json({ error: 'Sirf apna bill edit kar sakte ho' }, { status: 403 });
         }
-        if (minutesOld > SALESMAN_EDIT_MINUTES) {
-          return NextResponse.json({ error: `${SALESMAN_EDIT_MINUTES} minute se zyada ho gaye, admin se bolo` }, { status: 403 });
+        if (minutesOld > SALESMAN_CHANGE_MINUTES) {
+          return NextResponse.json({ error: '1 ghante se zyada ho gaya, admin se bolo' }, { status: 403 });
         }
       }
       const activeReturn = db.prepare(

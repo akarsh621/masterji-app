@@ -615,6 +615,21 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 28. Admin in-place Edit Bill; salesman window 1 hour
+
+### What changed
+- **Admin's Edit Bill edits the bill in place**: same bill number and date, "…save karne par isi bill mein badlav hoga", success screen "Bill Update Ho Gaya!" with Print (no "Revised" mark). Same validation as a new bill (shared `src/lib/bill-input.js`), one transaction, drawer moves by the cash difference (never for backdated bills), blocked by an active return or a closed quarter. Silent, with a hidden stamp (`bills.edited_at/edited_by`, `bill_edits` with the cash difference) -- migration v13.
+- **Salesmen** keep Edit Bill as cancel + linked new bill; Edit and Cancel on their own bills now allowed for **1 hour** (was 15 minutes).
+- Cancel Bill only cancels; leftover "void and recreate" names removed from the code.
+- Hisaab counts in-place edits of earlier days' bills; the audit checks edit records and reports how many bills were edited in place.
+
+### How to test
+1. Admin: Bill Book → a bill → Edit Bill → change a price → Save: same bill number, new total; cash drawer moves by the cash difference
+2. Salesman: Edit Bill on own bill within 1 hour → old bill cancelled, new linked bill; after 1 hour, no Edit/Cancel
+3. `npm test` (tests/bill-edit.test.mjs, integrity test with in-place edits)
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

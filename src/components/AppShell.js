@@ -38,7 +38,7 @@ export default function AppShell() {
     logout();
   };
 
-  const handleVoidAndRecreate = useCallback((data) => {
+  const handleEditBill = useCallback((data) => {
     setPrefillData(data);
     setActiveTab('new-bill');
   }, []);
@@ -54,7 +54,7 @@ export default function AppShell() {
       case 'dashboard': return <Dashboard />;
       case 'earnings': return <Earnings />;
       case 'hisaab': return <DayClose />;
-      case 'history': return <SalesHistory onVoidAndRecreate={handleVoidAndRecreate} />;
+      case 'history': return <SalesHistory onEditBill={handleEditBill} />;
       case 'settings': return <Settings />;
       default: return null;
     }

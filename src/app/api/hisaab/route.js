@@ -91,7 +91,13 @@ export async function GET(request) {
     // is counted on its own as a cancelled bill.
     const correctionsCash = cashOf(`b.replaces_bill_id IN
       (SELECT id FROM bills b WHERE ${earlierCancelled})`);
-    const cashAdjustment = Math.round((correctionsCash + cancelledReturnsCash - cancelledSalesCash) * 100) / 100;
+    // Admin's in-place edits today of earlier days' bills: the cash difference each made.
+    const inPlaceEditsCash = db.prepare(`
+      SELECT COALESCE(SUM(e.cash_delta), 0) AS cash
+      FROM bill_edits e JOIN bills b ON b.id = e.bill_id
+      WHERE date(e.edited_at) = ${today} AND date(b.created_at) < ${today} AND b.is_backdated = 0
+    `).get().cash;
+    const cashAdjustment = Math.round((correctionsCash + cancelledReturnsCash - cancelledSalesCash + inPlaceEditsCash) * 100) / 100;
 
     return NextResponse.json({
       cash_drawer: cashDrawer,

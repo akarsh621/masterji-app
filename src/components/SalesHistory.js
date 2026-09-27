@@ -9,6 +9,7 @@ import LoadError from '@/components/LoadError';
 import { normalizeSavedBill } from '@/lib/bill-data';
 import { getISTDateInputValue } from '@/lib/ui-utils';
 import { isQuarterLocked, quarterLabel } from '@/lib/date-utils';
+import { SALESMAN_CHANGE_MINUTES } from '@/lib/limits';
 
 function formatBillTime(value) {
   if (!value || typeof value !== 'string') return '--';
@@ -56,7 +57,7 @@ function getMinutesSinceCreation(createdAt) {
 const PAYMENT_LABELS = { cash: 'Cash', upi: 'UPI', card: 'Card', mixed: 'Mixed' };
 const PAYMENT_ICONS = { cash: '💵', upi: '📱', card: '💳', mixed: '💵+📱' };
 
-export default function SalesHistory({ onVoidAndRecreate }) {
+export default function SalesHistory({ onEditBill }) {
   const { user } = useAuth();
   const [bills, setBills] = useState([]);
   const [salesmen, setSalesmen] = useState([]);
@@ -161,12 +162,13 @@ export default function SalesHistory({ onVoidAndRecreate }) {
     }
   };
 
-  // "Edit Bill": open this bill in Naya Bill for correction. The old bill is
-  // only cancelled when the corrected one is saved (in one step on the server).
-  const startBillBadlo = (bill) => {
-    if (!onVoidAndRecreate) return;
-    onVoidAndRecreate({
-      replaces: { id: bill.id, bill_number: bill.bill_number },
+  // "Edit Bill": open this bill in Naya Bill for correction. Admin edits it in
+  // place (same bill number); a salesman's edit cancels it and saves a new,
+  // linked bill in one step. Cancel Bill only ever cancels.
+  const startEditBill = (bill) => {
+    if (!onEditBill) return;
+    onEditBill({
+      replaces: { id: bill.id, bill_number: bill.bill_number, inPlace: user.role === 'admin' },
       customer_phone: bill.customer_phone || '',
       customer_name: bill.customer_name || '',
       salesman_id: bill.salesman_id,
@@ -372,7 +374,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
               const quarterLocked = isQuarterLocked(bill.created_at.slice(0, 10));
               const isBackdated = typeof bill.notes === 'string' && bill.notes.includes('[Backdated]');
               const minutesOld = getMinutesSinceCreation(bill.created_at);
-              const canSalesmanVoid = user.role === 'salesman' && bill.salesman_id === user.id && minutesOld <= 15;
+              const canSalesmanVoid = user.role === 'salesman' && bill.salesman_id === user.id && minutesOld <= SALESMAN_CHANGE_MINUTES;
 
               nodes.push(
               <div key={bill.id} className={`card ${isReturn ? 'border-l-4 border-red-400 bg-red-50/30' : ''}`}>
@@ -462,7 +464,7 @@ export default function SalesHistory({ onVoidAndRecreate }) {
                         )}
                         {!isReturn && !quarterLocked && (user.role === 'admin' || canSalesmanVoid) && (
                           <button
-                            onClick={() => startBillBadlo(bill)}
+                            onClick={() => startEditBill(bill)}
                             className="text-xs font-medium px-1 py-1.5 min-h-[36px] rounded-full border whitespace-nowrap transition-colors text-gray-700 border-gray-300 bg-white hover:bg-gray-50 active:bg-gray-100"
                           >
                             Edit Bill

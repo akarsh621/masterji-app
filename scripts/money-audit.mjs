@@ -112,6 +112,17 @@ export function auditDatabase(db) {
     if (!!old.is_backdated !== !!b.is_backdated) err(b, 'backdated flag differs from the bill it replaced');
   }
 
+  // ---- Admin in-place edits (silent, but stamped): records must point at real sales.
+  const hasEdits = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bill_edits'").get();
+  const editRows = hasEdits ? db.prepare('SELECT * FROM bill_edits').all() : [];
+  for (const e of editRows) {
+    const b = byId.get(e.bill_id);
+    if (!b) errors.push(`edit record ${e.id}: bill ${e.bill_id} does not exist`);
+    else if (b.type !== 'sale') err(b, 'edit record on a return bill');
+    else if (b.is_backdated && Math.abs(e.cash_delta) > EPS) err(b, 'backdated bill edit moved the cash drawer');
+  }
+  const editedInPlace = new Set(editRows.map(e => e.bill_id)).size;
+
   // ---- Turnover: active sales minus active returns, by the bill's date.
   const period = new Map();
   const add = (key, b) => {
@@ -126,7 +137,7 @@ export function auditDatabase(db) {
   }
   const totals = [...period.entries()].sort().map(([key, p]) => ({ key, ...p, net: r2(p.sales - p.returns) }));
 
-  return { errors, warnings, totals, billCount: bills.length };
+  return { errors, warnings, totals, billCount: bills.length, editedInPlace };
 }
 
 // Financial-year quarter label, e.g. 2026-09-15 -> "FY26-27 Q2 (Jul-Sep)".
@@ -147,7 +158,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const Database = require('better-sqlite3');
   const db = new Database(file, { readonly: true, fileMustExist: true });
-  const { errors, warnings, totals, billCount } = auditDatabase(db);
+  const { errors, warnings, totals, billCount, editedInPlace } = auditDatabase(db);
   db.close();
 
   const inr = (n) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -157,7 +168,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   for (const t of totals) {
     console.log(t.key.padEnd(26) + inr(t.sales).padStart(16) + inr(t.returns).padStart(14) + inr(t.net).padStart(16) + `  ${t.saleCount} sale / ${t.returnCount} return`);
   }
-  console.log(`\nWarnings: ${warnings.length}`);
+  console.log(`\nBills edited in place by admin: ${editedInPlace}`);
+  console.log(`Warnings: ${warnings.length}`);
   for (const w of warnings) console.log('  - ' + w);
   console.log(`Errors: ${errors.length}`);
   for (const e of errors) console.log('  ✗ ' + e);
