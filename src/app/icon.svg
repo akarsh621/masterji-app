@@ -1,19 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#2563eb"/>
-  <!-- Shirorekha (Devanagari headline bar) -->
-  <rect x="80" y="120" width="352" height="12" rx="6" fill="#fff"/>
-  <!-- M -->
-  <rect x="100" y="132" width="28" height="230" rx="4" fill="#fff"/>
-  <rect x="218" y="132" width="28" height="230" rx="4" fill="#fff"/>
-  <polygon points="114,132 164,260 164,232 114,120" fill="#fff"/>
-  <polygon points="232,132 182,260 182,232 232,120" fill="#fff"/>
-  <rect x="148" y="230" width="50" height="28" rx="4" fill="#fff" opacity="0"/>
-  <polygon points="114,132 172,280 158,280 100,132" fill="#fff"/>
-  <polygon points="232,132 174,280 188,280 246,132" fill="#fff"/>
-  <!-- J -->
-  <rect x="300" y="120" width="120" height="12" rx="6" fill="#fff"/>
-  <rect x="344" y="132" width="28" height="190" rx="4" fill="#fff"/>
-  <path d="M290,340 Q290,382 340,382 Q372,382 372,340 L372,322 L344,322 L344,336 Q344,356 332,356 Q318,356 318,336 L318,322 L290,322 Z" fill="#fff"/>
-  <!-- Decorative dot -->
-  <circle cx="256" cy="420" r="16" fill="#fbbf24"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
+  <title>Master Ji — MJ monogram</title>
+  <rect width="512" height="512" fill="#5C1320"/>
+  <g fill="#E8D7B8" transform="translate(87 121) scale(1.55)">
+    <rect x="0" y="0" width="42" height="6"/>
+    <rect x="14" y="0" width="24" height="126"/>
+    <rect x="-2" y="120" width="54" height="6"/>
+    <path d="M34,0 Q42,34 66,54 L84,54 Q107,34 116,0 L102,0 Q95,30 75,46 Q55,30 44,0 Z"/>
+    <rect x="106" y="0" width="42" height="6"/>
+    <rect x="112" y="0" width="24" height="126"/>
+    <rect x="98" y="120" width="54" height="6"/>
+    <rect x="66.6" y="52" width="3.6" height="42"/>
+    <circle cx="79" cy="62" r="4.4"/>
+    <circle cx="79" cy="75" r="4.4"/>
+    <circle cx="79" cy="88" r="4.4"/>
+    <path transform="translate(160 126) scale(0.2 -0.2)" d="M298 625Q301 625 301.0 619.0Q301 613 298 613Q273 613 260.0 607.0Q247 601 243.0 586.0Q239 571 239 542V-4Q239 -116 183.5 -179.0Q128 -242 29 -242Q-8 -242 -32.5 -226.5Q-57 -211 -57 -182Q-57 -164 -45.0 -147.5Q-33 -131 -5 -131Q19 -131 32.0 -144.5Q45 -158 52.5 -176.0Q60 -194 66.5 -207.5Q73 -221 85 -221Q106 -221 116.0 -187.5Q126 -154 126 -74V544Q126 573 120.0 587.5Q114 602 96.0 607.5Q78 613 42 613Q40 613 40.0 619.0Q40 625 42 625Q73 625 108.0 623.5Q143 622 181 622Q216 622 245.5 623.5Q275 625 298 625Z"/>
+  </g>
 </svg>

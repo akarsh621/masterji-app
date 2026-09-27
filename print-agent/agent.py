@@ -65,7 +65,7 @@ def qr_code_bytes(data):
 LINE_WIDTH = 42
 
 # Composition-scheme Bill of Supply. Keep in sync with src/lib/print-receipt.js.
-SHOP_GSTIN = ''
+SHOP_GSTIN = '09AGHPG4211E1ZV'
 COMPOSITION_NOTE = 'Composition taxable person, not eligible to collect tax on supplies'
 LINE = b'-' * LINE_WIDTH + b'\n'
 DOUBLE_LINE = b'=' * LINE_WIDTH + b'\n'

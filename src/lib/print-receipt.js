@@ -4,7 +4,7 @@ const SHOP_ADDRESS = 'C Block, Main Market Road\nShastri Nagar, Ghaziabad';
 const SHOP_PHONE = 'Ph: 9540664066 / 0120-4245977';
 // Composition-scheme Bill of Supply: GSTIN plus the declaration required on
 // every bill. Keep in sync with print-agent/agent.py (SHOP_GSTIN).
-const SHOP_GSTIN = '';
+const SHOP_GSTIN = '09AGHPG4211E1ZV';
 const COMPOSITION_NOTE = 'Composition taxable person, not eligible to collect tax on supplies';
 // QR for the Google review link (https://g.page/r/Cdj1aJR-po6TEBI/review), generated
 // once into /public so receipts never depend on a third-party QR service.

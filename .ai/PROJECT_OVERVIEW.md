@@ -108,7 +108,7 @@ Printed by the shop PC agent on an 80 mm thermal printer (TVS RP 3200 Star, ESC/
         C Block, Main Market Road
         Shastri Nagar, Ghaziabad
       Ph: 9540664066 / 0120-4245977
-      GSTIN: <SHOP_GSTIN>                        (once set)
+      GSTIN: 09AGHPG4211E1ZV
 ==========================================
 Bill: MJF-0231        26 Sep 2026  5:42 PM
 Salesman: Salesman 1
@@ -149,7 +149,7 @@ Rules:
 - **Discount** = MRP Total − TOTAL: item discounts, final price and cash round-off together (no separate Round Off line; the app stores them together).
 - **Return bills** print `RETURN — against MJF-0100` under the bill line, the refund amount per line, no MRP Total/Discount, and `REFUND Rs X` instead of TOTAL.
 - Bill number format stays `MJF-XXXX` (one running series; legally fine).
-- Composition-scheme Bill of Supply: the heading and declaration print at the top of every bill. The GSTIN line appears once `SHOP_GSTIN` is set in **both** `print-agent/agent.py` and `src/lib/print-receipt.js` (still pending from the owner).
+- Composition-scheme Bill of Supply: the heading and declaration print at the top of every bill. The GSTIN (`SHOP_GSTIN`, 09AGHPG4211E1ZV) is set in **both** `print-agent/agent.py` and `src/lib/print-receipt.js`; change both together.
 - The review QR points to `https://g.page/r/Cdj1aJR-po6TEBI/review`; the browser receipt uses `public/review-qr.png`.
 - All bill text is escaped (HTML) or stripped of control characters (ESC/POS).
 
@@ -212,7 +212,7 @@ src/
     ui-utils.js bill-data.js
 tests/                 node:test integration tests against a real dev server (npm test)
 print-agent/           agent.py, update.py, start.bat, install.bat, config.example.ini, README.txt
-public/                manifest.json, icons, review-qr.png
+public/                manifest.json, icon-192/512.png (rendered from src/app/icon.svg), review-qr.png
 railway.json           build/start commands, health check /api/auth/salesmen
 ```
 
@@ -314,7 +314,6 @@ npm run build && npm start    # production build locally
 
 ## 10. Open items
 
-- **GSTIN** for the receipt (owner to provide; set `SHOP_GSTIN` in both receipt files).
 - Shop-PC visit: install the new `update.py` once, run `update.bat`, rotate `PRINT_AGENT_TOKEN` in Railway and `config.ini` together.
 - Make the GitHub repo private (Railway keeps deploying; printing is unaffected).
 - Before merging to `main`: back up the prod DB, test migrations on a copy of it, confirm Node 22 on Railway.

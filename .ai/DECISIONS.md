@@ -18,7 +18,7 @@ The shop is registered under the **GST composition scheme**. The app's figures a
 | **CSV export shows returns as negative** (Total, Subtotal, MRP, Discount, pieces, payments) with an "Against Bill" column. | Summing the Total column in a spreadsheet must give true net turnover. Before, returns were positive and a plain sum overstated turnover (i.e. more tax). | 27 Sep 2026 |
 | Run **`npm run audit`** on a copy of the production DB before every deploy and every quarterly filing; use its quarter figure. | Independent check of every bill; prints turnover by GST quarter. | 27 Sep 2026 |
 | **No GST invoicing.** The receipt is a **Bill of Supply**: heading and "Composition taxable person, not eligible to collect tax on supplies" at the **top**, GSTIN under the address, "For MASTER JI FASHION HOUSE / Authorised Signatory". | Required for a composition dealer (declaration at the top, supplier signature). | Sep 2026 |
-| **GSTIN is a placeholder** (`SHOP_GSTIN = ''` in `print-agent/agent.py` and `src/lib/print-receipt.js`) until the owner provides it. | Owner to supply. | 26 Sep 2026 |
+| **GSTIN 09AGHPG4211E1ZV** is printed on every receipt (`SHOP_GSTIN` in `print-agent/agent.py` and `src/lib/print-receipt.js` -- change both together). | Required on a Bill of Supply. | 27 Sep 2026 |
 | **Bill numbers stay `MJF-XXXX`** (one running series). No financial-year series like `MJF/26-27/0231`. | Already legally fine (unique, under 16 characters); changing it would touch the whole app. | 26 Sep 2026 |
 | **No separate Round Off line.** Discount on the receipt = everything off MRP (item discounts, final price, cash round-off). | The app stores round-off inside the discount; no schema change for a cosmetic line. | 26 Sep 2026 |
 | No composition-limit tracker (₹1.5 crore) and no financial-year total. | Owner reads turnover off the reports; reconfirmed. | Sep 2026, reconfirmed 27 Sep 2026 |
@@ -71,6 +71,7 @@ The shop is registered under the **GST composition scheme**. The app's figures a
 | Bill Book actions: **Print Bill · Return · Edit Bill · Cancel Bill** as one row of pills. Edit screen: "Bill MJF-XXXX edit kar rahe ho" / "Cancel editing". | Cancel shouldn't be the loudest button; "Bill badlo" wasn't clear. | 27 Sep 2026 |
 | Bill Book: filters collapsed by default, apply on change; one ✕ that restores the list. | Search first; the old ✕ left stale results. | 25 Sep 2026 |
 | **UPI QR removed.** | Never used; payments are verified on the POS machines. | Sep 2026 |
+| **App logo: "MJ" monogram**, cream (#E8D7B8) on maroon (#5C1320), the M styled as a kurta neckline with buttons. Source `src/app/icon.svg`; home-screen PNGs `public/icon-192.png` / `icon-512.png` are rendered from it. The app's own UI colour stays blue. | Owner's new logo. | 27 Sep 2026 |
 | Receipt: item lines show **MRP × qty (no Rate column)**, MRP Total, Discount, TOTAL; a payment line on every bill; English thank-you lines; "Exchange / Return sirf 7 din mein" kept. | Owner's layout. | 26 Sep 2026 |
 | Not done (owner declined): Hisaab redesign, return-panel redesign, pinned Save button, Earnings relabel, Logout move, PIN hashing. | Not necessary. | Sep 2026 |
 
