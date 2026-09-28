@@ -217,7 +217,7 @@ src/
     ui-utils.js bill-data.js
 tests/                 node:test integration tests against a real dev server (npm test)
 print-agent/           agent.py, update.py, start.bat, install.bat, config.example.ini, README.txt
-public/                manifest.json, icon-192/512.png (rendered from src/app/icon.svg), review-qr.png
+public/                manifest.json, icon-192-v2/512-v2.png (rendered from src/app/icon.svg; bump the -vN name when the logo changes so installed apps notice), review-qr.png
 railway.json           build/start commands, health check /api/auth/salesmen
 ```
 
