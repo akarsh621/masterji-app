@@ -261,6 +261,14 @@ const MIGRATIONS = [
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_bill_edits_edited_at ON bill_edits(edited_at)');
   },
+  // v14: Status of the automatic backup to the Railway bucket (shown in Settings
+  // and as a warning on Hisaab when backups stop).
+  (db) => {
+    addColumnIfMissing(db, 'app_state', 'last_backup_at', 'TEXT');
+    addColumnIfMissing(db, 'app_state', 'last_backup_key', 'TEXT');
+    addColumnIfMissing(db, 'app_state', 'last_backup_attempt_at', 'TEXT');
+    addColumnIfMissing(db, 'app_state', 'last_backup_error', 'TEXT');
+  },
 ];
 
 function addColumnIfMissing(db, table, column, definition) {

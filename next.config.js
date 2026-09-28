@@ -30,7 +30,9 @@ const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   poweredByHeader: false,
   experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
+    serverComponentsExternalPackages: ['better-sqlite3', '@aws-sdk/client-s3'],
+    // Starts the daily bucket backup (src/instrumentation.js).
+    instrumentationHook: true,
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

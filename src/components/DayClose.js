@@ -21,6 +21,12 @@ export default function DayClose() {
   const isAdmin = user?.role === 'admin';
 
   const [data, setData] = useState(null);
+  // Warns the owner here (a screen they open daily) if bucket backups have stopped.
+  const [backupStale, setBackupStale] = useState(false);
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.backupStatus().then(s => setBackupStale(!!s.stale)).catch(() => {});
+  }, [isAdmin]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [sweeping, setSweeping] = useState(false);
@@ -108,6 +114,12 @@ export default function DayClose() {
           {loading ? 'Refreshing...' : 'Refresh ↻'}
         </button>
       </div>
+
+      {backupStale && (
+        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          36 ghante se database backup nahi hua. Settings → Admin → Backup mein "Backup now" dabao.
+        </div>
+      )}
 
       {/* Hero card: Drawer balance + actions */}
       <div className="card mb-4 text-center py-6">

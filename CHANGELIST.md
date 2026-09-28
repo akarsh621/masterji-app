@@ -630,6 +630,19 @@ This document lists every change made with step-by-step test instructions for QA
 
 ---
 
+## 29. Automatic backups to the Railway bucket
+
+### What changed
+- Daily after 11:30 pm IST (or at once if the last good backup is over a day old), the app uploads a consistent gzipped snapshot to the bucket: 30 daily copies (never fewer than 7), the 1st of each month for 24 months, and a permanent copy of each GST quarter once it locks. The upload is size-checked; cleanup only runs after a successful upload.
+- Settings → Admin → **Backup**: last backup time, **Download backup** (fresh copy to the phone/Mac), **Backup now**. Hisaab shows a red warning for admin after 36 hours without a backup.
+- New: `src/lib/backup.js`, `src/instrumentation.js` + `src/backup-scheduler.js`, `/api/backup/status`, `/api/backup/run`, migration v14, dependency `@aws-sdk/client-s3`.
+
+### How to test
+1. `npm test` (tests/bucket-backup.test.mjs uses a local stand-in bucket)
+2. After deploy: Railway logs show "[backup] automatic bucket backups on"; Settings → Admin → Backup → Backup now → "Backup ho gaya ✓"; the files appear under `backups/` in the bucket
+
+---
+
 ## Login Credentials (for QA)
 
 Use the local **dev** database (`npm run dev`). Its test users are created on first start and printed in the server log. Never use or publish production credentials here.

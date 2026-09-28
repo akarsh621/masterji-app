@@ -243,6 +243,8 @@ All routes are under `/api/`. Auth is via `Authorization: Bearer <JWT>` header.
 | GET | `/api/customers` | Admin | Customer list with visits/spend; `?id=` for one customer's bills; `?format=csv` |
 | GET | `/api/customers/lookup` | Bearer | Look up a phone number while billing |
 | GET | `/api/backup` | Admin/Agent | Download a consistent copy of the database |
+| GET | `/api/backup/status` | Admin | Last automatic bucket backup |
+| POST | `/api/backup/run` | Admin | Back up to the bucket now |
 | GET | `/api/export` | Admin | CSV download. Optional `?from=&to=`. Compact items column. |
 | GET | `/api/hisaab` | Admin | Daily reconciliation: drawer balance, petty cash, today's cash flow |
 | GET | `/api/cash-drawer` | Bearer | Current cash drawer + petty cash target |
@@ -321,7 +323,7 @@ Admin username, password, and name can be changed from **Settings > Admin > Edit
 
 ### Deployment (Railway)
 
-The app is deployed to Railway with a persistent volume for the SQLite database (`DATA_DIR` must point at the volume). Required variables: `JWT_SECRET`, `DATA_DIR`, `PRINT_AGENT_TOKEN`. Build and start commands are pinned in `railway.json`.
+The app is deployed to Railway with a persistent volume for the SQLite database (`DATA_DIR` must point at the volume). Required variables: `JWT_SECRET`, `DATA_DIR`, `PRINT_AGENT_TOKEN`. For automatic backups, attach a Railway bucket to the service (provides `BUCKET_ENDPOINT`, `BUCKET_NAME`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY`, `BUCKET_SECRET_KEY`). Build and start commands are pinned in `railway.json`.
 
 ## Admin Navigation
 

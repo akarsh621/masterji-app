@@ -210,7 +210,9 @@ src/
     bill-draft.js      localStorage drafts
     date-utils.js      IST dates, month helpers
     phone.js           mobile normalisation/validation
-    limits.js          MAX_MRP (₹25,000/piece), MAX_QTY_PER_LINE (100)
+    limits.js          MAX_MRP (₹25,000/piece), MAX_QTY_PER_LINE (100), SALESMAN_CHANGE_MINUTES (60)
+    bill-input.js      shared validation for new bills and admin's in-place edit
+    backup.js          bucket backups: snapshot, upload, retention, status
     print-receipt.js   browser receipt
     ui-utils.js bill-data.js
 tests/                 node:test integration tests against a real dev server (npm test)
@@ -235,7 +237,7 @@ railway.json           build/start commands, health check /api/auth/salesmen
 | `customers` | `phone` (unique, 10 digits), `name`, `first_seen_at`, `last_seen_at` |
 | `login_attempts` | failed logins per account + IP (lockouts) |
 
-Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **13**. Notable: v8 money integrity (backdated flag, request ids, Edit Bill link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers , v12 re-credit old returns to the original salesman, v13 admin in-place edit stamp (`bills.edited_at/edited_by`, `bill_edits`).
+Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked by `app_state.schema_version`, each in its own transaction. Current version **14**. Notable: v8 money integrity (backdated flag, request ids, Edit Bill link, return line links), v9 login attempts, v10 drop the old UPI QR table, v11 customers , v12 re-credit old returns to the original salesman , v13 admin in-place edit stamp (`bills.edited_at/edited_by`, `bill_edits`), v14 bucket backup status (`app_state.last_backup_*`).
 
 ### 5.3 Security
 
@@ -254,12 +256,18 @@ Migrations: numbered functions in `MIGRATIONS` (`src/lib/db/index.js`), tracked 
 | `DATA_DIR` | Railway | Path of the mounted volume holding the SQLite file |
 | `PRINT_AGENT_TOKEN` | Railway + shop PC `config.ini` | Shared secret for the print agent (rotate both together) |
 | `ADMIN_INITIAL_PASSWORD` | Railway, first start only | Creates the first admin on a brand-new install |
+| `BUCKET_ENDPOINT`, `BUCKET_NAME`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY`, `BUCKET_SECRET_KEY` | Railway (from the attached bucket) | Automatic bucket backups; optional `BUCKET_FORCE_PATH_STYLE=true` if the bucket needs path-style URLs |
 | `DB_MODE=dev` | local (`npm run dev`) | Use `masterji_dev.db`, auto-seed test users |
 | `NEXT_DIST_DIR` | local/tests | Separate build folder (tests use `.next-test`) |
 
 Railway builds with `npm run build`, starts with `npm start`, health check `/api/auth/salesmen`. Deploys come from `main`.
 
-**Backups:** `GET /api/backup` (admin or agent) returns a consistent snapshot. The print agent downloads one per day to the shop PC and keeps 30.
+**Backups** (three copies, all consistent SQLite snapshots):
+1. **Railway bucket, automatic** (`src/lib/backup.js`, started by `src/instrumentation.js` → `src/backup-scheduler.js`): daily after 11:30 pm IST, gzipped, as `backups/daily/masterji-YYYY-MM-DD.db.gz` (30 days), `backups/monthly/masterji-YYYY-MM.db.gz` (24 months) and `backups/quarterly/masterji-FY26-27-Q2.db.gz` (forever, taken once the quarter locks). Off without the `BUCKET_*` variables or with `DB_MODE=dev`. Status in `app_state.last_backup_*`; `GET /api/backup/status`, `POST /api/backup/run` (admin).
+2. **Shop PC**, pulled daily by the print agent from `GET /api/backup`, 30 kept.
+3. **Download backup** (Settings → Admin → Backup) any time, from `GET /api/backup`.
+
+**Restoring** (only if the live database is lost or damaged): download the wanted `.db.gz` from the bucket (e.g. `aws s3 presign` in the Railway console) or take a shop-PC copy; `gunzip` it; stop the app in Railway; replace `$DATA_DIR/masterji.db` with it (and delete any `masterji.db-wal` / `-shm`) via `scp` or the console; start the app. Bills made after that backup are lost, so use the newest good copy. Run `npm run audit` on it first.
 
 **Print agent updates:** `update.bat` → `update.py` downloads `agent.py`, `update.py`, `start.bat` from `/api/print-agent/files/*` using the agent token (works with a private repo). `start.bat` restarts the agent if it exits.
 
@@ -336,4 +344,4 @@ Planned as a separate project after Project 1. Key decisions already made (they 
 - **Suppliers** with city; lots link to the `stock_purchase` expense.
 - Intake on phone and PC ("add to list, then print all tags for the lot"); tags print from the shop PC agent.
 - Scan on Naya Bill = add to bill with MRP pre-filled (discount still typed); never block a sale on zero stock.
-- Migrations continue from **v14**.
+- Migrations continue from **v15**.

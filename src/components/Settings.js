@@ -36,7 +36,12 @@ export default function Settings() {
       {tab === 'team' && <SalesTeamSettings />}
       {tab === 'categories' && <CategorySettings />}
       {tab === 'customers' && <Customers />}
-      {tab === 'admin' && <AdminSettings />}
+      {tab === 'admin' && (
+        <>
+          <BackupSettings />
+          <AdminSettings />
+        </>
+      )}
     </div>
   );
 }
@@ -363,6 +368,99 @@ function CategorySettings() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// '2026-09-28 23:30:05' -> '28 Sep, 11:30 pm'
+function formatStamp(stamp) {
+  if (!stamp) return '';
+  const d = new Date(stamp.replace(' ', 'T') + '+05:30');
+  return d.toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+  });
+}
+
+function BackupSettings() {
+  const [status, setStatus] = useState(null);
+  const [loadErr, setLoadErr] = useState('');
+  const [busy, setBusy] = useState('');
+  const [message, setMessage] = useState('');
+
+  const load = () => {
+    setLoadErr('');
+    api.backupStatus().then(setStatus).catch(err => setLoadErr(err.message));
+  };
+  useEffect(() => { load(); }, []);
+
+  const backupNow = async () => {
+    setBusy('run');
+    setMessage('');
+    try {
+      const res = await api.runBackup();
+      setStatus(res.status);
+      setMessage('Backup ho gaya ✓');
+    } catch (err) {
+      setMessage(err.message);
+      load();
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const download = async () => {
+    setBusy('download');
+    setMessage('');
+    try {
+      const res = await api.downloadBackup();
+      if (!res.ok) throw new Error('Download nahi hua — dobara try karo');
+      const name = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'masterji-backup.db';
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      setMessage(err.message || 'Download nahi hua — dobara try karo');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  if (loadErr) return <div className="mb-4"><LoadError message={loadErr} onRetry={load} /></div>;
+  if (!status) return null;
+
+  return (
+    <div className="card mb-4 space-y-2">
+      <h3 className="font-semibold">Backup</h3>
+      {status.enabled ? (
+        <p className="text-sm text-gray-700">
+          {status.last_backup_at
+            ? <>Last backup: <span className="font-medium">{formatStamp(status.last_backup_at)}</span> ✓</>
+            : 'Abhi tak koi backup nahi hua'}
+          <span className="block text-xs text-gray-500">Roz raat 11:30 baje apne aap (bucket mein)</span>
+        </p>
+      ) : (
+        <p className="text-sm text-gray-500">Bucket backup band hai (bucket set nahi hai)</p>
+      )}
+      {status.stale && (
+        <p className="text-sm font-medium text-red-600">36 ghante se backup nahi hua — "Backup now" dabao</p>
+      )}
+      {status.last_error && (
+        <p className="text-xs text-red-600">Pichla try fail hua ({formatStamp(status.last_attempt_at)}): {status.last_error}</p>
+      )}
+      {message && <p className="text-sm text-gray-700">{message}</p>}
+      <div className="flex gap-2 pt-1">
+        <button onClick={download} disabled={!!busy} className="btn-secondary flex-1 text-sm py-2.5">
+          {busy === 'download' ? 'Ban raha hai…' : '⬇ Download backup'}
+        </button>
+        {status.enabled && (
+          <button onClick={backupNow} disabled={!!busy} className="btn-primary flex-1 text-sm py-2.5">
+            {busy === 'run' ? 'Ho raha hai…' : 'Backup now'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

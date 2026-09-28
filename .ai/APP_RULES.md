@@ -105,7 +105,8 @@ A wrong number destroys trust in the app. Every rule here has a regression test;
 
 ### Stack and style
 - JavaScript only (no TypeScript), React function components, Tailwind (no CSS files beyond `globals.css`).
-- **No new dependencies without a strong reason.** Tests use Node's built-in `node:test`; there is no test framework dependency.
+- **No new dependencies without a strong reason.** Tests use Node's built-in `node:test`; there is no test framework dependency. The only exception so far: `@aws-sdk/client-s3` for bucket backups (see `.ai/DECISIONS.md`).
+- **Never break backups.** Anything touching `src/lib/backup.js`, the scheduler or `/api/backup*` must keep `tests/bucket-backup.test.mjs` green, and a failed upload must never delete older copies.
 - Match the surrounding code: naming, comment density, Hinglish copy style.
 - Shared helpers live in `src/lib/` (`date-utils`, `ui-utils`, `phone`, `limits`, `api-client`). Don't duplicate them in components.
 
@@ -121,7 +122,7 @@ A wrong number destroys trust in the app. Every rule here has a regression test;
 - Migrations are **append-only and numbered**. Never edit or reorder an existing one; every one still runs on old databases. One concern per migration.
 - Use `addColumnIfMissing` (PRAGMA check), never a `try {} catch {}` around `ALTER`.
 - **Before deploying, run new migrations on a copy of the production database** (download via `/api/backup`). Legacy prod tables have columns in a different order than fresh ones.
-- Current version: 12. Project 2 (inventory) starts at 13.
+- Current version: 14. Project 2 (inventory) starts at 15.
 
 ### Testing
 - **`npm test` must pass before every commit.** It starts `next dev` on a throwaway DB and runs `tests/*.test.mjs`.

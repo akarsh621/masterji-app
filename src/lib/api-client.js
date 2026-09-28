@@ -130,6 +130,9 @@ export const api = {
   lookupCustomer: (phone) => apiRequest(`/customers/lookup?phone=${encodeURIComponent(phone)}`),
   getCustomers: (params) => apiRequest(`/customers?${new URLSearchParams(params).toString()}`),
   customersCSV: () => apiRequest('/customers?format=csv', { rawResponse: true, timeout: 60000 }),
+  backupStatus: () => apiRequest('/backup/status'),
+  runBackup: () => apiRequest('/backup/run', { method: 'POST', timeout: 120000 }),
+  downloadBackup: () => apiRequest('/backup', { rawResponse: true, timeout: 120000 }),
 
 
   exportCSV: (params) => {
